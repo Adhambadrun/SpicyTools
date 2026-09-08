@@ -1,0 +1,44 @@
+{
+  "name": "spicytools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SpicyTools \u2014 fares with a kick. One master tool for finding hot fares: an embeddable search widget, an MCP server for agents, and a travel-hacking toolkit.",
+  "license": "MIT",
+  "author": "SpicyTools",
+  "homepage": "https://github.com/Adhambadrun/SpicyQuote#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adhambadrun/SpicyQuote.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Adhambadrun/SpicyQuote/issues"
+  },
+  "keywords": [
+    "flights",
+    "travel",
+    "deals",
+    "mcp",
+    "model-context-protocol",
+    "search-widget",
+    "award-travel"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "workspaces": [
+    "packages/widget",
+    "packages/mcp",
+    "packages/bcf-widget",
+    "packages/link",
+    "packages/terminal"
+  ],
+  "scripts": {
+    "dev": "node apps/web/server.mjs",
+    "start": "node apps/web/server.mjs",
+    "build": "npm run build --workspace @spicytools/widget && npm run build --workspace @spicytools/bcf-widget && npm run build --workspace @spicytools/terminal",
+    "widget:dev": "npm run start --workspace @spicytools/widget",
+    "mcp": "npm run dev --workspace @spicytools/mcp",
+    "test": "npm run test --workspace @spicytools/widget && npm run test --workspace @spicytools/bcf-widget && npm run test --workspace @spicytools/link && npm run test --workspace @spicytools/terminal",
+    "smoke": "npm run smoke --workspace @spicytools/mcp"
+  }
+}

@@ -1,0 +1,85 @@
+@import "variables";
+// External libraries.
+@import "libs/reactDatepicker";
+@import "libs/reactSelect";
+
+/*
+ * ----------------------------------------------------------------------
+ * BUTTONS
+ * ----------------------------------------------------------------------
+ */
+.btn {
+	border-radius: 0;
+	cursor: pointer;
+	border: none;
+	font-weight: 700;
+	font-size: 14px;
+	height: 40px;
+	line-height: 40px;
+	outline: none !important;
+
+	&:active {
+		border: none;
+	}
+
+	&:focus {
+		box-shadow: none;
+	}
+}
+
+.btn-primary {
+	background-color: $main-button-color;
+	color: $font-color;
+
+	&:hover {
+		background-color: $main-button-color_hover;
+		color: $font-color;
+	}
+
+	&:active {
+		background-color: $main-button-color_hover;
+	}
+}
+
+/*
+ * ----------------------------------------------------------------------
+ * FORMS
+ * ----------------------------------------------------------------------
+ */
+.form-control {
+	border-radius: 0;
+	border-color: $border-color;
+	color: $font-color;
+	background-color: transparent;
+	font-weight: 600;
+	font-size: 15px;
+	position: relative;
+	padding: 0 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	height: 40px;
+	line-height: 40px;
+
+	&[readonly] {
+		background-color: $surface;
+	}
+
+	&:focus {
+		border-color: $border-color;
+		z-index: 10;
+	}
+}
+
+/*
+ * ----------------------------------------------------------------------
+ * DATEPICKER
+ * ----------------------------------------------------------------------
+ */
+.react-datepicker-popper {
+	z-index: 15;
+}
+
+.react-datepicker-wrapper,
+.react-datepicker__input-container {
+	display: block;
+}

@@ -1,0 +1,401 @@
+@import "../variables";
+
+.react-datepicker {
+	@include adaptivity(phone) {
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		position: absolute;
+	}
+
+	&-popper {
+		@include adaptivity(phone) {
+			position: fixed !important;
+			transform: none !important;
+			top: 0 !important;
+			left: 0 !important;
+			right: 0 !important;
+			bottom: 0 !important;
+			margin-top: 0 !important;
+		}
+	}
+}
+
+.widget-ui-datepicker {
+	border-radius: 0;
+	box-shadow: 0 5px 15px -5px rgba(0, 0, 0, 0.5);
+	color: $text-muted;
+	background: $surface;
+	border: 1px solid $border-color;
+	border-bottom-color: $border-strong;
+	font-family: "Open Sans", sans-serif !important;
+
+	@include adaptivity(phone) {
+		overflow: auto;
+		padding: 50px 0 75px 0;
+		font-size: 1rem;
+	}
+
+	&__header {
+		@extend .widget-ui-mobile__header;
+		display: none;
+		padding-top: 20px;
+
+		@include adaptivity(phone) {
+			display: block;
+		}
+
+		.widget-ui-mobile__title {
+			&:before {
+				content: $icon-plane;
+				position: absolute;
+				font-family: "OpenSkyIcons", sans-serif;
+				speak: none;
+				font-style: normal;
+				font-weight: normal;
+				font-variant: normal;
+				text-transform: none;
+				line-height: 1;
+				-webkit-font-smoothing: antialiased;
+				-moz-osx-font-smoothing: grayscale;
+				font-size: 20px;
+				transform: translate(0, -25%) rotate(-45deg);
+				top: 50%;
+				margin-left: -32px;
+				margin-top: 4px;
+
+				@include adaptivity(phone) {
+					display: none;
+				}
+			}
+		}
+
+		&_return {
+			.widget-ui-mobile__title {
+				&:before {
+					transform: translate(0, -25%) rotate(135deg);
+					margin-top: 4px;
+
+					@include adaptivity(phone) {
+						display: none;
+					}
+				}
+			}
+		}
+
+		@include adaptivity(phone) {
+			padding: 0;
+		}
+	}
+
+	&__footer {
+		clear: both;
+		margin-bottom: $main-padding-size;
+		text-align: center;
+
+		@include adaptivity(phone) {
+			position: fixed;
+			bottom: $main-padding-size;
+			left: $main-padding-size;
+			right: $main-padding-size;
+		}
+
+		&__button {
+			display: inline-block;
+			line-height: 14px;
+			padding: 10px $main-padding-size;
+
+			font-size: 13px;
+			font-weight: 400;
+
+			border: 1px solid rgba($title-color, 0.2);
+			background: $surface;
+			color: $title-color;
+			cursor: pointer;
+
+			&:hover {
+				background: $title-color;
+				color: $text-inverse;
+			}
+
+			@include adaptivity(phone) {
+				padding: 14px 0;
+				width: 100%;
+
+				font-size: 17px;
+				background: $title-color;
+				color: $text-inverse;
+			}
+
+			&:active {
+				background-color: $title-color;
+				color: $text-inverse;
+			}
+		}
+	}
+
+	&__specialDay {
+		@extend .react-datepicker__day--highlighted;
+		font-weight: 700 !important;
+		background: rgba($title-color, 0.2) !important;
+	}
+
+	.react-datepicker {
+		&__triangle {
+			display: none;
+		}
+
+		&__header {
+			background-color: $surface;
+			border-bottom: none;
+			padding-top: 0;
+		}
+
+		&__navigation {
+			top: 22px;
+
+			@include adaptivity(phone) {
+				position: fixed;
+				top: 65px;
+			}
+
+			&--previous,
+			&--next {
+				@extend .widget-ui-icon;
+
+				display: flex;
+				justify-content: center;
+				align-items: center;
+
+				height: 30px;
+				width: 30px;
+				border: 1px solid $border-strong;
+				border-radius: 50%;
+				color: $text-placeholder !important;
+				font-size: 12px;
+
+				&:before {
+					content: $icon-short-arrow;
+					position: relative;
+					right: -1px;
+				}
+
+				&:hover {
+					@include adaptivity(not-phone) {
+						background-color: $title-color;
+						color: $text-inverse !important;
+						border-color: $title-color;
+					}
+				}
+
+				&:active {
+					@include adaptivity(phone) {
+						background-color: $title-color;
+						color: $text-inverse !important;
+						border-color: $title-color;
+					}
+				}
+			}
+
+			&--previous {
+				left: 25px;
+				transform: rotate(180deg);
+
+				@include adaptivity(phone) {
+					left: 15px;
+				}
+			}
+
+			&--next {
+				right: 25px;
+
+				@include adaptivity(phone) {
+					right: 15px;
+				}
+			}
+		}
+
+		&__month {
+			margin: 5px;
+
+			&-container {
+				padding: 30px 15px 15px;
+
+				&:nth-of-type(3) {
+					@include adaptivity(phone) {
+						display: none;
+					}
+				}
+
+				@include adaptivity(phone) {
+					width: 100%;
+					float: none;
+					display: block;
+					padding: 20px 0 0;
+				}
+			}
+		}
+
+		&__current {
+			&-month {
+				padding-bottom: 20px;
+				font-size: 15px;
+				line-height: 15px;
+				font-weight: 600;
+				color: $text-muted;
+				text-transform: capitalize;
+			}
+		}
+
+		&__week {
+			margin-bottom: 2px;
+			white-space: nowrap;
+		}
+
+		&__day {
+			color: $font-color;
+			position: relative;
+			width: 2.1rem;
+			height: 2.1rem;
+			line-height: 2.1rem;
+			margin: 0;
+			transition: background 0.2s $transition-function;
+
+			@include adaptivity(phone) {
+				width: 2.8rem;
+				height: 2.5rem;
+				line-height: 2.5rem;
+			}
+
+			&-names {
+				white-space: nowrap;
+			}
+
+			&-name {
+				color: $text-placeholder;
+				font-size: 12px;
+				font-family: "Arial", sans-serif;
+				font-weight: 700;
+				text-align: center;
+				padding-bottom: 3px;
+				text-transform: lowercase;
+				width: 2.1rem;
+				height: 2rem;
+				line-height: 2rem;
+				margin: 0;
+
+				@include adaptivity(phone) {
+					width: 2.8rem;
+				}
+			}
+
+			&--today,
+			&--keyboard-selected {
+				color: $title-color;
+				font-weight: 700;
+				background: $surface;
+			}
+
+			&--outside-month {
+				color: $text-placeholder;
+			}
+
+			&:hover {
+				background: rgba($title-color, 0.2);
+				border-radius: 0;
+			}
+
+			&--hasFlight {
+				color: $text-muted;
+				background: rgba($main-button-color, 0.2);
+				border-radius: 0;
+				font-weight: 400;
+			}
+
+			// Heat scale for priced calendars: how much cheaper than the
+			// median day of the month is this one?
+			&--mild {
+				color: $heat-mild;
+				background: rgba($heat-mild, 0.12);
+				border-radius: 0;
+			}
+
+			&--medium {
+				color: $heat-medium;
+				background: rgba($heat-medium, 0.16);
+				border-radius: 0;
+			}
+
+			&--hot {
+				color: $heat-hot;
+				background: rgba($heat-hot, 0.2);
+				border-radius: 0;
+				font-weight: 600;
+			}
+
+			&--inferno {
+				color: $heat-inferno;
+				background: rgba($heat-inferno, 0.26);
+				border-radius: 0;
+				font-weight: 600;
+			}
+
+			&--highlighted {
+				color: $title-color;
+				background: rgba($title-color, 0.1);
+				border-radius: 0;
+				font-weight: 400;
+
+				&:hover {
+					background: rgba($title-color, 0.2);
+				}
+			}
+
+			&--selected {
+				@extend .widget-ui-datepicker__specialDay;
+			}
+
+			&--disabled {
+				color: $text-placeholder;
+
+				&:hover {
+					color: $text-placeholder;
+					background: $surface;
+				}
+			}
+		}
+	}
+
+	&__calendar {
+		@extend .widget-ui-icon;
+
+		position: absolute;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 2;
+		width: 39px;
+
+		display: flex;
+		align-items: center;
+		justify-content: center;
+
+		font-size: 17px;
+		color: $text-placeholder;
+		cursor: pointer;
+		pointer-events: none;
+
+		&-inner {
+			display: none;
+		}
+
+		&:after {
+			content: $icon-calendar;
+		}
+
+		@include adaptivity(phone) {
+			font-size: 15px;
+		}
+	}
+}

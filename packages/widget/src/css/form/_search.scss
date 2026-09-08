@@ -1,0 +1,93 @@
+@import "../variables";
+@import "airports";
+@import "dates";
+@import "passengers";
+@import "classType";
+@import "additional";
+@import "bonus";
+
+&-footer {
+	display: flex;
+	flex-wrap: wrap;
+	position: relative;
+
+	&__col {
+		flex-grow: 1;
+		flex-basis: 50%;
+
+		&:nth-of-type(2n+1) {
+			@include adaptivity(not-phone) {
+				padding-right: 0.5rem;
+			}
+		}
+
+		&:nth-of-type(2n) {
+			@include adaptivity(not-phone) {
+				padding-left: 0.5rem;
+			}
+		}
+
+		&:last-of-type {
+			@include adaptivity(not-phone) {
+				text-align: right;
+				min-width: 0;
+				margin-top: 16px;
+			}
+		}
+
+		@include adaptivity(not-phone) {
+			position: static;
+		}
+
+		@include adaptivity(phone) {
+			flex: 100%;
+			position: relative;
+
+			&:last-of-type {
+				margin-top: 1rem;
+			}
+		}
+	}
+
+	@include adaptivity(phone) {
+		flex-wrap: wrap;
+	}
+}
+
+&__addSegment {
+	width: 100%;
+	height: 40px;
+	line-height: 40px;
+
+	background: $surface-2;
+	text-align: center;
+	align-self: center;
+
+	color: $text-muted;
+	font-weight: 700;
+	font-size: 15px;
+	cursor: pointer;
+
+	@include adaptivity(phone) {
+		margin: -1rem 0 0;
+	}
+}
+
+&__startButton {
+	&.btn-primary {
+		padding: 0 43px;
+
+		&:active {
+			color: $font-color !important;
+			background-color: $main-button-color_hover !important;
+		}
+
+		&:active:focus {
+			box-shadow: none !important;
+		}
+
+		@include adaptivity(phone) {
+			width: 100%;
+		}
+	}
+}

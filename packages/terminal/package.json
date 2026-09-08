@@ -1,0 +1,15 @@
+{
+  "name": "@spicytools/terminal",
+  "version": "4.0.0",
+  "description": "SpicyTools Terminal \u2014 paste flights from Google Flights, emails or screenshots and get a GDS black-window itinerary (deterministic offline engine).",
+  "main": "spicy_engine.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test_engine.js && node test_route_direction.js && node test_accent_routes.js && node test_multi_leg_bleed.js && node test_ba_ord_lhr_cai.js && node test_big_wide.js && node test_very_wide.js && node test_offline_images.js && node test_attachment_pipeline.js && node test_gds_screenshot.js && node test_lamar_sgn.js && node test_lax_man.js && node test_xiamen_google_flights.js && node test_mistake_learner.js && node test_weekly_report.js && node test_about_dialog.js && node test_ai_fix_label.js"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
+    "ocrad.js": "^0.0.1"
+  }
+}

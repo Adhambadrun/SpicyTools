@@ -1,0 +1,163 @@
+{
+  "_meta": {
+    "description": "SpicyTools seed deal feed. Every entry is a fare the widget can load into the search form and run.",
+    "disclaimer": "SAMPLE DATA. These fares ship with the repository so the tools and the widget have something to chew on. They are not live quotes and must not be shown to users as real availability — replace this file (or point the server at your fare feed) before going live. See packages/mcp/README.md.",
+    "source": "seed",
+    "last_updated": "2026-09-08",
+    "staleness_days": 7,
+    "schema": {
+      "departure": "IATA code of the departure airport/city",
+      "arrival": "IATA code of the arrival airport/city",
+      "price": "current fare",
+      "baselinePrice": "typical fare for the route — drives the heat rating",
+      "currency": "ISO-4217 code",
+      "departDate": "YYYY-MM-DD",
+      "returnDate": "YYYY-MM-DD (omit for a one-way)",
+      "directFlight": "boolean",
+      "label": "short hook"
+    }
+  },
+  "CAI-IST": {
+    "departure": "CAI",
+    "arrival": "IST",
+    "price": 118,
+    "baselinePrice": 240,
+    "currency": "USD",
+    "departDate": "2026-10-09",
+    "returnDate": "2026-10-16",
+    "directFlight": true,
+    "label": "Bosphorus weekend",
+    "source": "seed"
+  },
+  "CAI-LIS": {
+    "departure": "CAI",
+    "arrival": "LIS",
+    "price": 232,
+    "baselinePrice": 610,
+    "currency": "USD",
+    "departDate": "2026-11-04",
+    "returnDate": "2026-11-11",
+    "directFlight": false,
+    "label": "Atlantic run",
+    "source": "seed"
+  },
+  "CAI-BKK": {
+    "departure": "CAI",
+    "arrival": "BKK",
+    "price": 389,
+    "baselinePrice": 420,
+    "currency": "USD",
+    "departDate": "2026-12-02",
+    "returnDate": "2026-12-14",
+    "directFlight": false,
+    "label": "Winter escape",
+    "source": "seed"
+  },
+  "DXB-TBS": {
+    "departure": "DXB",
+    "arrival": "TBS",
+    "price": 141,
+    "baselinePrice": 195,
+    "currency": "USD",
+    "departDate": "2026-10-22",
+    "directFlight": true,
+    "label": "Caucasus one-way",
+    "source": "seed"
+  },
+  "LHR-JFK": {
+    "departure": "LHR",
+    "arrival": "JFK",
+    "price": 341,
+    "baselinePrice": 780,
+    "currency": "USD",
+    "departDate": "2026-11-18",
+    "returnDate": "2026-11-25",
+    "directFlight": true,
+    "label": "Transatlantic steal",
+    "source": "seed"
+  },
+  "JFK-NRT": {
+    "departure": "JFK",
+    "arrival": "NRT",
+    "price": 512,
+    "baselinePrice": 1180,
+    "currency": "USD",
+    "departDate": "2027-01-12",
+    "returnDate": "2027-01-26",
+    "directFlight": false,
+    "label": "Tokyo in the low season",
+    "source": "seed"
+  },
+  "CDG-KEF": {
+    "departure": "CDG",
+    "arrival": "KEF",
+    "price": 96,
+    "baselinePrice": 260,
+    "currency": "USD",
+    "departDate": "2026-11-09",
+    "returnDate": "2026-11-13",
+    "directFlight": true,
+    "label": "Northern lights hop",
+    "source": "seed"
+  },
+  "BER-OTP": {
+    "departure": "BER",
+    "arrival": "OTP",
+    "price": 62,
+    "baselinePrice": 210,
+    "currency": "USD",
+    "departDate": "2026-10-15",
+    "returnDate": "2026-10-19",
+    "directFlight": true,
+    "label": "City break",
+    "source": "seed"
+  },
+  "SIN-DPS": {
+    "departure": "SIN",
+    "arrival": "DPS",
+    "price": 74,
+    "baselinePrice": 190,
+    "currency": "USD",
+    "departDate": "2026-11-27",
+    "returnDate": "2026-12-01",
+    "directFlight": true,
+    "label": "Island hop",
+    "source": "seed"
+  },
+  "MEL-AKL": {
+    "departure": "MEL",
+    "arrival": "AKL",
+    "price": 158,
+    "baselinePrice": 175,
+    "currency": "USD",
+    "departDate": "2026-12-19",
+    "returnDate": "2026-12-29",
+    "directFlight": true,
+    "label": "Tasman crossing",
+    "source": "seed"
+  },
+  "YYZ-MEX": {
+    "departure": "YYZ",
+    "arrival": "MEX",
+    "price": 219,
+    "baselinePrice": 505,
+    "currency": "USD",
+    "departDate": "2027-02-04",
+    "returnDate": "2027-02-14",
+    "directFlight": false,
+    "label": "Winter sun",
+    "source": "seed"
+  },
+  "NBO-DXB": {
+    "departure": "NBO",
+    "arrival": "DXB",
+    "price": 187,
+    "baselinePrice": 430,
+    "currency": "USD",
+    "departDate": "2026-10-30",
+    "returnDate": "2026-11-08",
+    "directFlight": true,
+    "label": "Gulf connector",
+    "source": "seed"
+  }
+}

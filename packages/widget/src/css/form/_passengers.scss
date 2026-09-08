@@ -1,0 +1,215 @@
+@import "../variables";
+
+&-passengers {
+	position: relative;
+
+	@include adaptivity(not-phone) {
+		margin-bottom: 0;
+	}
+
+	&__trigger {
+		border: 1px solid $border-color;
+		background: $surface;
+
+		&,
+		input {
+			cursor: pointer;
+		}
+	}
+
+	.widget-ui-dropdown__trigger_open {
+		.widget-ui-input__arrow {
+			transform: rotate(180deg);
+		}
+	}
+
+	&__header {
+		display: none;
+
+		@include adaptivity(phone) {
+			display: block;
+		}
+	}
+
+	&__content {
+		position: absolute;
+		left: 0;
+		right: 0;
+		z-index: 12;
+
+		margin-top: -1px;
+		font-size: 15px;
+		line-height: 16px;
+
+		border: 1px solid $border-color;
+		border-top: none;
+		box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+		background-color: $surface;
+		font-weight: 400;
+
+		@include adaptivity(phone) {
+			position: fixed;
+			top: $mobile-header-height;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			font-size: 17px;
+		}
+	}
+
+	&__item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 7px 11px;
+		border-top: 1px solid $border-color;
+
+		&_disabled {
+			color: $text-placeholder;
+		}
+
+		@include adaptivity(phone) {
+			padding: 10px 15px;
+
+			&:last-of-type {
+				border-bottom: 1px solid $border-color;
+			}
+		}
+	}
+
+	&__trigger {
+		&__title {
+			text-transform: lowercase;
+			white-space: nowrap;
+			user-select: none;
+
+			line-height: 38px !important;
+		}
+	}
+
+	&__title {
+		font-weight: 600;
+		overflow: hidden;
+		display: inline-block;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+
+		&__age {
+			color: $text-placeholder;
+			font-size: 13px;
+			padding-left: 10px;
+
+			@include adaptivity(phone) {
+				padding-left: 0;
+				display: block;
+				margin-top: 4px;
+			}
+		}
+	}
+
+	&__class {
+		color: $text-placeholder;
+
+		&__comma {
+			color: $text-muted;
+		}
+	}
+
+	&__counter {
+		display: flex;
+		align-items: center;
+		font-weight: 600;
+	}
+
+	&__icon {
+		border-radius: 50%;
+		width: 25px;
+		height: 25px;
+		color: $title-color;
+		font-size: 11px;
+		cursor: pointer;
+
+		&:after {
+			content: "";
+			position: absolute;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+
+			width: 25px;
+			height: 25px;
+
+			@include adaptivity(phone) {
+				width: 30px;
+				height: 30px;
+			}
+		}
+
+		&:hover {
+			@include adaptivity(not-phone) {
+				background-color: $title-color;
+				border-color: $title-color;
+				color: $text-inverse;
+			}
+		}
+
+		&:active {
+			@include adaptivity(phone) {
+				background-color: $title-color;
+				border-color: $title-color;
+				color: $text-inverse;
+			}
+		}
+
+		&_disabled {
+			&,
+			&:hover {
+				background-color: $surface;
+				border-color: $surface-2;
+				color: $surface-2;
+				cursor: not-allowed;
+			}
+		}
+
+		@include adaptivity(phone) {
+			width: 30px;
+			height: 30px;
+			font-size: 13px;
+		}
+	}
+
+	&__minus {
+		&:after {
+			content: $icon-minus;
+		}
+	}
+
+	&__plus {
+		&:after {
+			content: $icon-plus;
+		}
+	}
+
+	&__number {
+		font-size: 14px;
+		padding: 0 7px;
+
+		@include adaptivity(phone) {
+			font-size: 16px;
+			padding: 0 10px;
+		}
+	}
+
+	&__footer {
+		@extend .widget-ui-datepicker__footer;
+		display: none;
+
+		@include adaptivity(phone) {
+			display: block;
+		}
+
+		&__button {
+			@extend .widget-ui-datepicker__footer__button;
+		}
+	}
+}

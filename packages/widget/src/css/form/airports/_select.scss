@@ -1,0 +1,284 @@
+@import "../../variables";
+
+&__select {
+	// React-select plugin has a shitty CSS styling, 
+	// so we have to do a lot of dirty overwriting.
+	.Select {
+		&-loading {
+			border-right-color: $border-strong;
+
+			&-zone {
+				position: absolute;
+				top: 0;
+				bottom: 0;
+				display: flex;
+				right: 50px;
+				align-items: center;
+			}
+		}
+
+		&-control {
+			cursor: pointer;
+			border-radius: 0;
+			height: 40px;
+			border-color: $border-color !important;
+
+			&:hover {
+				box-shadow: none;
+			}
+		}
+
+		&-input {
+			padding-left: 13px;
+			height: 38px;
+
+			input {
+				width: 100%;
+				height: 38px;
+				line-height: 38px;
+
+				padding: 0;
+				font-weight: 600;
+				font-size: 15px;
+				color: $text-muted !important;
+
+				&[readonly] {
+					cursor: pointer;
+				}
+			}
+		}
+
+		&-placeholder {
+			line-height: 38px;
+			font-weight: 600;
+			font-size: 15px;
+			padding-left: 13px;
+			color: $text-muted;
+		}
+
+		&-menu {
+			max-height: none;
+
+			&-outer {
+				max-height: 370px;
+				overflow: auto;
+				border-radius: 0;
+
+				border: 1px solid $border-color;
+				box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+				background-color: $surface;
+			}
+		}
+
+		&-option {
+			transition: background, 0.4s, ease;
+			display: block;
+			position: relative;
+
+			padding: 10px 90px 10px 13px;
+			line-height: 16px;
+
+			list-style-type: none;
+			background: $surface;
+			border-bottom: 1px solid $border-color;
+			color: $font-color;
+			font-size: 15px;
+			font-weight: 400;
+			cursor: pointer;
+
+			&:hover,
+			&.is-focused {
+				background: rgba($title-color, 0.14);
+			}
+
+			&:last-of-type {
+				@include adaptivity(not-phone) {
+					border-bottom: none;
+				}
+			}
+		}
+	}
+
+	&.is-open {
+		.Select {
+			&-control {
+				border-color: $border-color;
+			}
+		}
+	}
+
+	&_focused {
+		box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+		background-color: transparent;
+	}
+
+	&__wrapper {
+		position: relative;
+	}
+
+	&__value {
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		right: 70px;
+
+		display: flex;
+		align-items: center;
+		padding-left: 13px;
+		white-space: nowrap;
+
+		&__airportName,
+		&__comma {
+			font-weight: 600;
+			font-size: 15px;
+			color: $text-muted;
+		}
+
+		&__countryName {
+			font-weight: 600;
+			font-size: 15px;
+			color: $text-placeholder;
+
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		&__placeholder {
+			@extend .Select-placeholder;
+			display: none;
+		}
+	}
+
+	&.is-focused {
+		.Select {
+			&-control {
+				box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+				background-color: transparent;
+
+				.widget-airports__select__value {
+					&__airportName,
+					&__countryName {
+						display: none;
+					}
+
+					&__placeholder {
+						display: block;
+					}
+
+					&_readOnly {
+						.widget-airports__select__value__placeholder {
+							display: none;
+						}
+
+						.widget-airports__select__value__airportName,
+						.widget-airports__select__value__countryName {
+							display: block;
+						}
+					}
+				}
+
+				@include adaptivity(phone) {
+					position: fixed;
+					top: ($mobile-header-height - $mobile-input-height) / 2;
+					left: 50px;
+					right: 15px;
+					z-index: 13;
+					width: auto;
+					flex: 1;
+					display: flex;
+					height: $mobile-input-height;
+					line-height: normal;
+
+					background-color: $surface;
+					box-shadow: none;
+					border-top: none;
+					border-left: none;
+					border-right: none;
+
+					.Select-multi-value-wrapper {
+						width: 100%;
+					}
+
+					.widget-airports__select__value {
+						right: 0;
+					}
+
+					.Select-arrow-zone {
+						display: none;
+					}
+
+					.Select-input:not(input),
+					.Select-placeholder {
+						height: $mobile-input-height;
+						display: flex;
+						align-items: center;
+					}
+
+					input {
+						line-height: normal;
+					}
+				}
+			}
+
+			&-menu {
+				&-outer {
+					margin-top: -1px;
+
+					@include adaptivity(phone) {
+						position: fixed;
+						top: $mobile-header-height;
+						left: 0;
+						right: 0;
+						bottom: 0;
+
+						max-height: none;
+						border-left: none;
+						border-right: none;
+						border-bottom: none;
+						box-shadow: none;
+					}
+				}
+			}
+
+			&-noresults,
+			&-defaultOptions-hint {
+				@include adaptivity(not-phone) {
+					text-align: left;
+				}
+
+				position: relative;
+
+				padding: 10px 15px;
+				line-height: 16px;
+				text-align: center;
+
+				background: $surface;
+				border-bottom: 1px solid $border-color;
+				color: $text-placeholder;
+				font-size: 15px;
+				font-weight: 600;
+			}
+
+			&-defaultOptions {
+				display: none;
+
+				@include adaptivity(phone) {
+					display: block;
+				}
+
+				.Select-option:not(:first-child) {
+					.widget-airports__suggestion__recently {
+						display: none;
+					}
+				}
+			}
+		}
+	}
+
+	&_readOnly {
+		.Select-placeholder {
+			cursor: pointer;
+		}
+	}
+}

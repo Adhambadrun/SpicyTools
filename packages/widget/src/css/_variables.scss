@@ -1,0 +1,87 @@
+// =============================================================================
+// SpicyTools — "Smoke & Hot Sauce" palette
+// -----------------------------------------------------------------------------
+// Everything in the widget is painted from these tokens. Retheme the widget by
+// overriding them before importing `main.scss`; no partial contains a raw colour.
+// =============================================================================
+
+// Smoke (surfaces, darkest → lightest)
+$smoke-1000: #07070b !default; // page backdrop behind the widget
+$smoke-900: #101017 !default;  // widget base
+$smoke-800: #17171f !default;  // inputs, dropdowns, popovers
+$smoke-700: #1f1f2a !default;  // hover / raised
+$smoke-600: #2b2b3a !default;  // borders
+$smoke-500: #3d3d51 !default;  // strong borders, dividers
+
+// Hot sauce (primary)
+$ember: #ff3b1f !default;      // hot sauce red — primary action
+$ember-hover: #ff5c2b !default;
+$ember-press: #e02d13 !default;
+
+// Heat scale — how spicy is this fare?
+$heat-mild: #ffd166 !default;
+$heat-medium: #ff9f1c !default;
+$heat-hot: #ff5c2b !default;
+$heat-inferno: #ff0033 !default;
+
+// Type
+$bone: #f2f3f7 !default;       // primary text on smoke
+$ash: #a9afc2 !default;        // secondary text
+$ash-dim: #757b90 !default;    // placeholder / disabled
+
+// Semantic tokens consumed by the partials
+$surface: $smoke-900 !default;
+$surface-2: $smoke-800 !default;
+$surface-3: $smoke-700 !default;
+$border-color: $smoke-600 !default;
+$border-strong: $smoke-500 !default;
+
+$text-color: $bone !default;
+$text-muted: $ash !default;
+$text-placeholder: $ash-dim !default;
+$text-inverse: #ffffff !default;   // text on ember / heat fills
+$text-on-heat: #2a1206 !default;   // text on yellow heat fills
+
+$title-color: $ember !default;
+$font-color: $text-muted !default;
+$main-button-color: $ember !default;
+$main-button-color_hover: $ember-hover !default;
+
+$highlight: $heat-medium !default;
+$shadow-color: rgba(0, 0, 0, 0.55) !default;
+
+// Layout / motion
+$transition-function: cubic-bezier(0.27, 0.67, 0.28, 0.87) !default;
+
+$mobile-header-height: 50px !default;
+$mobile-input-height: 34px !default;
+$main-padding-size: 15px !default;
+$screen-size-phone: 650px !default;
+$screen-size-tablet: 750px !default;
+
+// Icon font glyphs (SpicyToolsIcons)
+$icon-calendar: "\E90D";
+$icon-cross: "\E908";
+$icon-plane: "\E90B";
+$icon-swap: "\E901";
+$icon-arrow: "\E923";
+$icon-dropdown-arrow: "\E90A";
+$icon-short-arrow: "\E90E";
+$icon-short-arrow_bold: "\E92A";
+$icon-plus: "\E902";
+$icon-minus: "\E903";
+
+@mixin adaptivity($media) {
+	@if $media == phone {
+		@media only screen and (max-width: $screen-size-phone) { @content; }
+	}
+	@else if $media == not-phone {
+		@media only screen and (min-width: $screen-size-phone + 1) { @content; }
+	}
+	@else if $media == tablet {
+		@media only screen and (max-width: $screen-size-tablet) { @content; }
+	}
+	@else if $media == desktop {
+		@media only screen and (min-width: $screen-size-tablet + 1) { @content; }
+	}
+}

@@ -1,0 +1,58 @@
+# SpicyTools CI — GitHub Actions
+#
+# Copy this file to `.github/workflows/ci.yml` to enable it. It is kept out of
+# `.github/` in this branch because the integration pushing these commits is not
+# permitted to create workflow files.
+#
+#   mkdir -p .github/workflows && cp ci/github-actions.yml .github/workflows/ci.yml
+#
+# It builds the widget, runs the widget unit tests, exercises the MCP server
+# end to end, and checks that the app boots and serves its API.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm install --legacy-peer-deps
+
+      - name: Build widget
+        run: npm run build
+
+      - name: Widget tests
+        run: npm test
+
+      - name: MCP smoke test
+        run: |
+          node packages/mcp/local-server.js &
+          # wait for the local MCP server to accept connections
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3900/health > /dev/null && break
+            sleep 1
+          done
+          npm run smoke
+
+      - name: App boots and serves the API
+        run: |
+          PORT=3000 node apps/web/server.mjs &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:3000/api/deals | grep -q '"count"'
+          curl -sf http://localhost:3000/api/tools | grep -q '"name": "spice_meter"'

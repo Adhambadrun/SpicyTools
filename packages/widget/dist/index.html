@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>SpicyQuote — fares with a kick</title>
+	<style>
+		* { padding: 0; margin: 0; }
+
+		html, body { width: 100%; min-height: 100%; }
+
+		html { font-size: 16px; }
+
+		body {
+			font-family: "Open Sans", "Segoe UI", Roboto, sans-serif;
+			background: #07070b;
+			background-image:
+				radial-gradient(900px 420px at 15% -10%, rgba(255, 59, 31, 0.18), rgba(255, 59, 31, 0) 60%),
+				radial-gradient(700px 380px at 95% 0%, rgba(255, 159, 28, 0.12), rgba(255, 159, 28, 0) 60%);
+			color: #f2f3f7;
+			padding: 40px 20px 80px;
+		}
+
+		.container { max-width: 1000px; margin: 0 auto; }
+
+		.brand {
+			display: flex;
+			align-items: center;
+			gap: 14px;
+			margin-bottom: 6px;
+		}
+
+		.brand img { width: 54px; height: 54px; }
+
+		.brand h1 {
+			font-size: 30px;
+			letter-spacing: -0.02em;
+			background: linear-gradient(90deg, #ff3b1f, #ff9f1c);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+		}
+
+		.tagline { color: #a9afc2; margin-bottom: 26px; }
+
+		@media screen and (max-width: 540px) {
+			.spicyquote-testWrapper { width: 100%; }
+		}
+	</style>
+	<link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700&amp;subset=cyrillic" rel="stylesheet">
+	<link rel="stylesheet" href="spicyquote.min.css">
+</head>
+<body>
+
+<div class="container">
+	<div class="brand">
+		<img src="../logo.png" alt="SpicyQuote">
+		<h1>SpicyQuote</h1>
+	</div>
+
+	<p class="tagline">Fares with a kick. Search a route, or tap a hot fare from the spice rack and go.</p>
+
+	<div id="root" class="spicyquote-testWrapper"></div>
+</div>
+
+<script src="spicyquote.min.js"></script>
+<script>
+	SpicyQuote.init({
+		rootElement: document.getElementById('root'),
+		spicyURL: 'https://geodata.nemo.travel',
+		fallbackSpicyURL: 'https://sys.nemo.travel',
+		locale: 'en',
+		mode: 'SPICY',
+		useNearestAirport: true,
+		verticalForm: false,
+		highlightAvailableDates: true,
+		hotDeals: [
+			{ departure: 'CAI', arrival: 'IST', price: 118, baselinePrice: 240, currency: 'USD', departDate: '2026-10-09', returnDate: '2026-10-16', label: 'Bosphorus weekend', directFlight: true },
+			{ departure: 'CAI', arrival: 'LIS', price: 232, baselinePrice: 610, currency: 'USD', departDate: '2026-11-04', returnDate: '2026-11-11', label: 'Atlantic run' },
+			{ departure: 'DXB', arrival: 'TBS', price: 141, baselinePrice: 195, currency: 'USD', departDate: '2026-10-22', label: ' Caucasus one-way' },
+			{ departure: 'CAI', arrival: 'BKK', price: 389, baselinePrice: 420, currency: 'USD', departDate: '2026-12-02', returnDate: '2026-12-14', label: 'Winter escape' }
+		]
+	});
+</script>
+</body>
+</html>

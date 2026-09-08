@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<title>SpicyQuote — Websky mode</title>
+	<style>
+		* {
+			padding: 0;
+			margin: 0;
+		}
+
+		html, body {
+			width: 100%;
+			height: 100%;
+		}
+
+		html {
+			font-size: 16px;
+		}
+
+		body {
+			background-color: #07070b;
+			color: #f2f3f7;
+		}
+
+		.container {
+			width: 100%;
+			margin: 0 auto;
+			padding-top: 50px;
+		}
+
+		.spicyquote-testWrapper {
+			width: 100%;
+		}
+
+		@media screen and (max-width: 540px) {
+			.spicyquote-testWrapper {
+				width: 100%;
+			}
+		}
+	</style>
+	<link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700&amp;subset=cyrillic" rel="stylesheet">
+	<link rel="stylesheet" href="spicyquote.min.css">
+</head>
+<body>
+
+<div class="container">
+	<div id="root" class="spicyquote-testWrapper"></div>
+</div>
+
+<script src="spicyquote.min.js"></script>
+<script>
+	SpicyQuote.init({
+		"rootElement": document.getElementById('root'),
+		"webskyURL": "https://booking.alrosa.aero/websky",
+		"spicyURL": "https://geodata.nemo.travel",
+		"routingGrid": null,
+		"locale": "ru",
+		"verticalForm": false,
+		"readOnlyAutocomplete": false,
+		"autoFocusArrivalAirport": false,
+		"autoFocusReturnDate": false,
+		"mode": "WEBSKY",
+		"defaultDepartureAirport": null,
+		"defaultArrivalAirport": null,
+		"defaultDepartureDate": null,
+		"defaultReturnDate": null,
+		"defaultPassengers": {"ADT": 1},
+		"defaultServiceClass": "Economy",
+		"directOnly": false,
+		"vicinityDatesMode": false,
+		"useNearestAirport": false,
+		"highlightAvailableDates": true,
+		"vicinityDays": 3,
+		"enableCoupon": false,
+		"enableMileCard": true,
+		"aggregationOnly": false,
+		"disableCaching": false,
+		"isComplexRoute": false
+	});
+</script>
+</body>
+</html>

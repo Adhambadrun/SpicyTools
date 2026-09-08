@@ -1,0 +1,186 @@
+@import "../variables";
+
+&-segments {
+	display: flex;
+	flex-wrap: wrap;
+	margin-bottom: 1rem;
+
+	@include adaptivity(phone) {
+		display: block;
+		margin-left: 0;
+		margin-right: 0;
+	}
+
+	&_CR {
+		.widget-segments__segment {
+			position: relative;
+			display: flex;
+
+			&:last-of-type {
+				.widget {
+					&-airports,
+					&-dates {
+						margin-bottom: 0;
+					}
+
+					@include adaptivity(phone) {
+						&-airports {
+							margin-bottom: -1px;
+						}
+					}
+				}
+			}
+
+			.widget-airports {
+				&__swap {
+					display: none;
+				}
+
+				&__col {
+					&:last-of-type {
+						.Select-control .Select-placeholder,
+						.Select-input:not(input),
+						.widget-airports__select__value {
+							padding-left: 13px !important;
+						}
+					}
+				}
+
+				@include adaptivity(phone) {
+					margin-bottom: -1px;
+				}
+			}
+
+			.widget-dates {
+				margin-left: 0.5rem;
+				margin-right: -5px;
+
+				@include adaptivity(phone) {
+					margin-left: 0;
+					margin-right: 0;
+				}
+			}
+
+			.widget-airports__col:first-of-type {
+				.widget-ui-input__arrow {
+					right: 0;
+				}
+
+				.widget-airports__airportCode {
+					right: 17px;
+
+					&.widget-airports__airportCode_withArrow {
+						right: 35px;
+					}
+				}
+			}
+
+			@include adaptivity(not-phone) {
+				.widget-airports__col {
+					&:first-of-type {
+						padding-right: 1rem;
+					}
+
+					&:last-of-type {
+						.Select-control {
+							border-left: 1px solid;
+						}
+					}
+				}
+			}
+
+			@include adaptivity(phone) {
+				margin-bottom: 1rem;
+				padding-right: 0;
+			}
+		}
+
+		@include adaptivity(not-phone) {
+			.widget {
+				&-airports {
+					flex-basis: 0;
+					min-width: 85%;
+				}
+
+				&-dates {
+					flex-basis: 100%;
+				}
+			}
+		}
+
+		@include adaptivity(phone) {
+			.widget-dates {
+				width: 100%;
+				margin-left: 0;
+
+				.widget-dates__col {
+					&:last-of-type {
+						padding: 0;
+					}
+				}
+			}
+		}
+	}
+
+	&__segment {
+		width: 100%;
+
+		&__drop {
+			@extend .widget-ui-icon;
+
+			position: absolute;
+			left: 0;
+			margin-right: 30px;
+			margin-top: 7px;
+			transform: translateX(-50%);
+			z-index: 2;
+
+			background: $main-button-color;
+			color: $text-on-heat;
+			font-size: 15px;
+			line-height: 30px;
+			text-align: center;
+			cursor: pointer;
+			font-weight: 700;
+
+			display: flex;
+			justify-content: center;
+			align-items: center;
+
+			height: 25px;
+			width: 25px;
+
+			&:before {
+				font-size: 11px;
+				content: $icon-cross;
+				color: $font-color;
+			}
+
+			@include adaptivity(phone) {
+				margin-top: 25px;
+			}
+		}
+
+		&:only-child {
+			margin-bottom: 0;
+
+			.widget-dates {
+				margin-bottom: 0;
+			}
+		}
+
+		@include adaptivity(phone) {
+			padding: 0;
+			flex-wrap: wrap;
+		}
+	}
+
+	&__arrivalSuggestion {
+		margin: 20px 10px;
+
+		span {
+			text-decoration: underline;
+			cursor: pointer;
+		}
+	}
+}

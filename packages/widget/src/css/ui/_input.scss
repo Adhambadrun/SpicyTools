@@ -1,0 +1,81 @@
+@import "../variables";
+
+.widget-ui-input {
+	display: block;
+	width: 100%;
+
+	overflow: hidden;
+	text-overflow: ellipsis;
+	-webkit-appearance: none;
+
+	border: 1px solid $border-color;
+	transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+
+	&__wrapper {
+		position: relative;
+	}
+
+	&__arrow {
+		position: absolute;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		width: 35px;
+
+		display: flex;
+		align-items: center;
+		justify-content: center;
+
+		font-size: 5px;
+		color: $text-muted;
+		cursor: pointer;
+		pointer-events: none;
+		transition: transform 0.15s ease-in-out;
+
+		&:after {
+			content: $icon-dropdown-arrow;
+		}
+	}
+
+	&__closer {
+		@extend .widget-ui-icon;
+
+		position: absolute;
+		right: 1px;
+		top: 0;
+		bottom: 0;
+		z-index: 2;
+
+		width: 35px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+
+		font-size: 11px;
+		color: $title-color;
+		cursor: pointer;
+
+		@include adaptivity(phone) {
+			top: 1px;
+		}
+
+		&:before {
+			content: $icon-cross;
+		}
+	}
+
+	&_disabled {
+		background: $surface-2 !important;
+		border-color: $surface-2 !important;
+		transition: background 0.2s $transition-function !important;
+
+		&:hover {
+			background: $surface-2 !important;
+			border-color: $border-color !important;
+		}
+	}
+
+	&[readonly] {
+		background-color: $surface;
+	}
+}
