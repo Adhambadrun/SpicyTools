@@ -11,7 +11,7 @@
 //   * Local tools (spice_meter, find_hot_deals, and the travel-hacking dataset
 //     tools) need nothing but the bundled JSON, so they are asserted hard.
 //   * The web-research trio proxies the metered AgentSearch API behind a
-//     RapidAPI proxy-secret guard. Without SPICYQUOTE_MCP_PROXY_SECRET the
+//     RapidAPI proxy-secret guard. Without SPICYTOOLS_MCP_PROXY_SECRET the
 //     origin answers 403, which is an expected upstream-auth condition rather
 //     than a wiring bug, so that call only warns.
 
@@ -54,27 +54,27 @@ async function callTool(name, args) {
 }
 
 async function main() {
-  console.log(`Smoke-testing SpicyQuote MCP at ${BASE} ...\n`);
+  console.log(`Smoke-testing SpicyTools MCP at ${BASE} ...\n`);
 
   // 1. health
   const health = await fetch(`${BASE}/health`).then((r) => r.json());
   console.log('== GET /health ==');
   console.log(JSON.stringify(health, null, 2));
   if (!health.ok) throw new Error('health check failed');
-  if (health.service !== 'spicyquote-mcp') throw new Error(`unexpected service: ${health.service}`);
+  if (health.service !== 'spicytools-mcp') throw new Error(`unexpected service: ${health.service}`);
 
   // 2. initialize
   const init = await rpc('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
-    clientInfo: { name: 'spicyquote-mcp-smoke-test', version: '1.0.0' },
+    clientInfo: { name: 'spicytools-mcp-smoke-test', version: '1.0.0' },
   });
   console.log('\n== initialize ==');
   console.log(`HTTP ${init.status}`);
   const serverName = init.json?.result?.serverInfo?.name;
   console.log(`server: ${serverName}`);
   if (init.status !== 200 || init.json?.error) throw new Error('initialize failed');
-  if (serverName !== 'spicyquote') throw new Error(`unexpected server name: ${serverName}`);
+  if (serverName !== 'spicytools') throw new Error(`unexpected server name: ${serverName}`);
 
   // 3. tools/list
   const list = await rpc('tools/list', {});
@@ -121,10 +121,10 @@ async function main() {
   const resultText = call.json?.result?.content?.[0]?.text;
   console.log(resultText);
   if (call.json?.result?.isError) {
-    const guarded = !process.env.SPICYQUOTE_MCP_PROXY_SECRET &&
+    const guarded = !process.env.SPICYTOOLS_MCP_PROXY_SECRET &&
       /403|RapidAPI|proxy|forbidden|fetch failed|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|network|timed? ?out/i.test(resultText || '');
     if (guarded) {
-      console.log('\n[warn] the web-research call could not reach the metered upstream (RapidAPI proxy-secret guard, or no network in this environment) and no SPICYQUOTE_MCP_PROXY_SECRET is set — expected. The local tools above prove the server is wired correctly.');
+      console.log('\n[warn] the web-research call could not reach the metered upstream (RapidAPI proxy-secret guard, or no network in this environment) and no SPICYTOOLS_MCP_PROXY_SECRET is set — expected. The local tools above prove the server is wired correctly.');
     } else {
       throw new Error(`tools/call returned isError: ${resultText}`);
     }

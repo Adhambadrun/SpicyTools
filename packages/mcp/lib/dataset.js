@@ -4,7 +4,7 @@
 //   * packages/toolkit/data/*.json  — the travel-hacking dataset (sweet spots,
 //     transfer partners, point valuations, award holds, stopovers, status
 //     matches, round-the-world awards, alliances).
-//   * packages/mcp/data/*.json      — SpicyQuote's own deal feed (a seed file the
+//   * packages/mcp/data/*.json      — SpicyTools's own deal feed (a seed file the
 //     operator is expected to replace with a real fare feed).
 //
 // Everything is read from disk once and cached for the lifetime of the process.

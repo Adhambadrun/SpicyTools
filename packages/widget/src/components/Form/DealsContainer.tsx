@@ -21,7 +21,7 @@ type Props = StateProps & DispatchProps;
  * The spice rack: a rail of hot fares above the search form.
  *
  * Deals are supplied through the `hotDeals` config option. Each one is a real,
- * priced fare from the site owner — SpicyQuote only works out how hot it is.
+ * priced fare from the site owner — SpicyTools only works out how hot it is.
  */
 class Deals extends React.Component<Props> {
 	dealClickHandler(deal: HotDeal): void {

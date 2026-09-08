@@ -4,7 +4,7 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const packageJSON = require('./package.json');
 
 const isDevMode = process.env.NODE_ENV === 'development';
-const moduleName = 'spicyquote';
+const moduleName = 'spicytools';
 
 module.exports = {
 	context: __dirname,
@@ -16,7 +16,7 @@ module.exports = {
 		path: path.resolve(__dirname, 'dist'),
 		publicPath: '/',
 		filename: '[name].min.js',
-		library: 'SpicyQuote',
+		library: 'SpicyTools',
 		libraryTarget: 'umd'
 	},
 	performance: {
@@ -30,12 +30,12 @@ module.exports = {
 		],
 		extensions: ['.ts', '.js', '.json', '.tsx', '.css', '.scss'],
 		alias: {
-			// The datepicker and select are consumed through SpicyQuote-owned
+			// The datepicker and select are consumed through SpicyTools-owned
 			// specifiers so the underlying library can be swapped in one place.
 			// They point at the upstream originals — the Nemo-branded forks of
 			// these libraries were dropped along with every other Nemo dependency.
-			'@spicyquote/react-datepicker': 'react-datepicker',
-			'@spicyquote/react-select': 'react-select'
+			'@spicytools/react-datepicker': 'react-datepicker',
+			'@spicytools/react-select': 'react-select'
 		}
 	},
 	module: {

@@ -7,17 +7,17 @@
 //   buildGoogleFlightsUrl(lead, addYvr, overrideCabin)   // protobuf `tfs` payload
 //   buildMatrixUrl(lead, overrideCabin, mixedDep, mixedRet, flexDays)
 //   buildPointsYeahUrl(lead, leg, flexDays, overrideCabin)
-//   buildSpicyQuoteUrl(lead, leg, overrideCabin)         // our own engine
+//   buildSpicyToolsUrl(lead, leg, overrideCabin)         // our own engine
 //   buildFastSearchCommand(lead, overrideCabin)          // Sabre / GK command
 //
-// A `lead` is the shape the widget detects (and the shape SpicyQuote deals
+// A `lead` is the shape the widget detects (and the shape SpicyTools deals
 // already use):
 //   { id, name, origin, destination, cabin, departureDate, returnDate,
 //     adults, children, infants, segments: [{ origin, destination,
 //                                            departureDate, returnDate }] }
 //
 // Ported from the TBC Floating Flight Search Widget (v12.2) and re-skinned to
-// the SpicyQuote "dark smoke & hot sauce" palette. `npm run build` inlines this
+// the SpicyTools "dark smoke & hot sauce" palette. `npm run build` inlines this
 // file into the userscript, so keep it free of DOM access.
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -263,32 +263,32 @@
     return 'https://www.pointsyeah.com/search?' + params.toString();
   }
 
-  // Where SpicyQuote deep links land. A deployment overrides this once at boot
-  // with `BCF.setSearchBase('https://your-spicyquote-host')`.
-  let SPICYQUOTE_SEARCH_BASE = 'https://search.spicyquote.app';
+  // Where SpicyTools deep links land. A deployment overrides this once at boot
+  // with `BCF.setSearchBase('https://your-spicytools-host')`.
+  let SPICYTOOLS_SEARCH_BASE = 'https://search.spicytools.app';
 
   function setSearchBase(url) {
-    if (url) SPICYQUOTE_SEARCH_BASE = String(url).replace(/\/$/, '');
-    return SPICYQUOTE_SEARCH_BASE;
+    if (url) SPICYTOOLS_SEARCH_BASE = String(url).replace(/\/$/, '');
+    return SPICYTOOLS_SEARCH_BASE;
   }
-  const SPICYQUOTE_CABINS = { Y: 'economy', W: 'premium', B: 'business', F: 'first' };
+  const SPICYTOOLS_CABINS = { Y: 'economy', W: 'premium', B: 'business', F: 'first' };
 
   /**
-   * Deep link into SpicyQuote: the same SpicyTool query shape the widget uses
+   * Deep link into SpicyTools: the same SpicyTool query shape the widget uses
    * (`/api/v2/search`), so a BCF lead can be priced by our own engine.
    */
-  function buildSpicyQuoteUrl(lead, leg, overrideCabin) {
+  function buildSpicyToolsUrl(lead, leg, overrideCabin) {
     if (!leg || !leg.date || !leg.origin || !leg.destination) return null;
 
     const params = new URLSearchParams({
       origin: leg.origin,
       destination: leg.destination,
       date: leg.date,
-      cabin: SPICYQUOTE_CABINS[overrideCabin || lead.cabin] || 'business',
+      cabin: SPICYTOOLS_CABINS[overrideCabin || lead.cabin] || 'business',
       passengers: String(lead.adults + lead.children)
     });
 
-    return SPICYQUOTE_SEARCH_BASE + '/?' + params.toString();
+    return SPICYTOOLS_SEARCH_BASE + '/?' + params.toString();
   }
 
   function getFastSearchCabin(cabinLetter) {
@@ -337,7 +337,7 @@ if (typeof module !== 'undefined' && module.exports) {
     MONTHS, cabinLabel, seasonInfo, daysBetween, addDays, fmtDate,
     leadSegments, isOpenJaw, searchLegs, tripTypeLabel,
     buildKayakUrl, buildGoogleFlightsUrl, buildMatrixUrl, buildPointsYeahUrl,
-    buildSpicyQuoteUrl, buildFastSearchCommand, setSearchBase,
-    getFastSearchCabin, formatSabreDate, itaDateModifier, SPICYQUOTE_CABINS
+    buildSpicyToolsUrl, buildFastSearchCommand, setSearchBase,
+    getFastSearchCabin, formatSabreDate, itaDateModifier, SPICYTOOLS_CABINS
   };
 }

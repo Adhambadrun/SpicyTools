@@ -58,8 +58,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`SpicyQuote MCP local dev server listening on http://localhost:${PORT}`);
+  console.log(`SpicyTools MCP local dev server listening on http://localhost:${PORT}`);
   console.log(`  MCP endpoint:    http://localhost:${PORT}/mcp`);
   console.log(`  Health endpoint: http://localhost:${PORT}/health`);
-  console.log(`  Upstream web API: ${process.env.SPICYQUOTE_MCP_API_BASE_URL || 'https://agentsearch-api.vercel.app'}`);
+  console.log(`  Upstream web API: ${process.env.SPICYTOOLS_MCP_API_BASE_URL || process.env.SPICYQUOTE_MCP_API_BASE_URL || 'https://agentsearch-api.vercel.app'}`);
 });

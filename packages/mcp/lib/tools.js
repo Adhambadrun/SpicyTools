@@ -1,4 +1,4 @@
-// lib/tools.js — SpicyQuote MCP tool definitions.
+// lib/tools.js — SpicyTools MCP tool definitions.
 //
 // Three families of tools, all read-only:
 //
@@ -16,11 +16,18 @@
 // discovery tier.
 
 import { z } from 'zod';
+import { createRequire } from 'node:module';
 
 import { loadDataset, queryDataset, metaOf, entries } from './dataset.js';
 
-const BASE_URL = (process.env.SPICYQUOTE_MCP_API_BASE_URL || 'https://agentsearch-api.vercel.app').replace(/\/+$/, '');
-const PROXY_SECRET = process.env.SPICYQUOTE_MCP_PROXY_SECRET || '';
+// The SpicyTools Terminal engine is plain CommonJS and DOM-free, so agents get
+// the same deterministic converter the /terminal page uses.
+const require = createRequire(import.meta.url);
+const SpicyEngine = require('../../terminal/spicy_engine.js');
+
+// `SPICYQUOTE_MCP_*` is the pre-rename name; still honoured as a fallback.
+const BASE_URL = (process.env.SPICYTOOLS_MCP_API_BASE_URL || process.env.SPICYQUOTE_MCP_API_BASE_URL || 'https://agentsearch-api.vercel.app').replace(/\/+$/, '');
+const PROXY_SECRET = process.env.SPICYTOOLS_MCP_PROXY_SECRET || process.env.SPICYQUOTE_MCP_PROXY_SECRET || '';
 
 const asText = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] });
 const asError = (err) => ({
@@ -168,7 +175,7 @@ export function registerTools(server) {
     {
       title: 'Rate how spicy a fare is',
       description:
-        'Turn a fare into a SpicyQuote heat rating. Pass the current price and the price the route normally sells at (baselinePrice) and you get back a discount percentage, a heat level (mild/medium/hot/inferno), the matching chilli count and a one-line verdict. Thresholds: <20% off = mild, 20-34% = medium, 35-49% = hot, 50%+ = inferno. No baseline means no invented heat — the fare comes back mild with a 0% discount. Pure arithmetic, no network calls.',
+        'Turn a fare into a SpicyTools heat rating. Pass the current price and the price the route normally sells at (baselinePrice) and you get back a discount percentage, a heat level (mild/medium/hot/inferno), the matching chilli count and a one-line verdict. Thresholds: <20% off = mild, 20-34% = medium, 35-49% = hot, 50%+ = inferno. No baseline means no invented heat — the fare comes back mild with a 0% discount. Pure arithmetic, no network calls.',
       inputSchema: {
         price: z.number().describe('Fare being offered.'),
         baselinePrice: z.number().optional().describe('Typical fare for this route. Without it the heat is always mild.'),
@@ -184,7 +191,7 @@ export function registerTools(server) {
     {
       title: 'Find hot fares',
       description:
-        'Search the SpicyQuote deal feed — the same feed the search widget renders as its "spice rack". Filter by origin/destination IATA code, maximum price and minimum heat level; results come back hottest first. Every deal is a loadable fare (departure, arrival, price, dates) so an agent can hand it straight to the widget or to a booking flow. NOTE: the bundled feed is sample data (see the disclaimer in the response) — point the server at a real fare feed before trusting prices in production.',
+        'Search the SpicyTools deal feed — the same feed the search widget renders as its "spice rack". Filter by origin/destination IATA code, maximum price and minimum heat level; results come back hottest first. Every deal is a loadable fare (departure, arrival, price, dates) so an agent can hand it straight to the widget or to a booking flow. NOTE: the bundled feed is sample data (see the disclaimer in the response) — point the server at a real fare feed before trusting prices in production.',
       inputSchema: {
         from: z.string().optional().describe('Departure IATA code, e.g. CAI.'),
         to: z.string().optional().describe('Arrival IATA code, e.g. IST.'),
@@ -212,6 +219,37 @@ export function registerTools(server) {
         filters: { from: from || null, to: to || null, maxPrice: maxPrice ?? null, minHeat: minHeat || null },
         disclaimer: metaOf(loadDataset('hot-deals', 'own')).disclaimer,
         deals,
+      });
+    }
+  );
+
+  server.registerTool(
+    'gds_itinerary',
+    {
+      title: 'Convert flights into a GDS itinerary',
+      description:
+        'Paste flight text — a Google Flights card list, an airline confirmation, an email, a GDS screen — and get back a GDS black-window itinerary: real IATA aircraft codes, 12-hour GDS clocks, overnight markers, hidden-stop merging, one chronological ticket order. Deterministic and offline: the same input always gives the same output and nothing leaves the process. Missing details are reported in `warnings` and printed as ???? rather than guessed. Use it after `find_hot_deals` (to write up a fare) or before handing an itinerary to a human agent.',
+      inputSchema: {
+        text: z.string().min(1).describe('The pasted itinerary text.'),
+      },
+      annotations: RO_CLOSED,
+    },
+    async (args = {}) => {
+      const text = String(args.text || '');
+
+      if (!text.trim()) {
+        return asError(new Error('`text` is required.'));
+      }
+
+      const [segments, warnings] = SpicyEngine.parse(text);
+
+      return asText({
+        itinerary: SpicyEngine.renderItinerary(segments),
+        segmentCount: segments.length,
+        warnings: warnings || [],
+        note: warnings && warnings.length
+          ? 'Some fields could not be read and are shown as ???? — fix the input or paste a cleaner screen.'
+          : null,
       });
     }
   );

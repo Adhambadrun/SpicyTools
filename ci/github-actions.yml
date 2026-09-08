@@ -1,4 +1,4 @@
-# SpicyQuote CI — GitHub Actions
+# SpicyTools CI — GitHub Actions
 #
 # Copy this file to `.github/workflows/ci.yml` to enable it. It is kept out of
 # `.github/` in this branch because the integration pushing these commits is not

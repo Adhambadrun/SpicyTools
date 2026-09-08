@@ -3,9 +3,9 @@ node_modules/
 .npm/
 
 # Build output
-packages/widget/dist/spicyquote.min.js
-packages/widget/dist/spicyquote.min.js.LICENSE.txt
-packages/widget/dist/spicyquote.min.css
+packages/widget/dist/spicytools.min.js
+packages/widget/dist/spicytools.min.js.LICENSE.txt
+packages/widget/dist/spicytools.min.css
 packages/widget/dist/demo.min.js
 packages/widget/dist/demo.min.js.LICENSE.txt
 /dist/
@@ -21,3 +21,6 @@ packages/bcf-widget/dist/
 
 # Upload artifacts (unpacked into packages/)
 *.zip
+
+# SpicyTools Terminal build output
+packages/terminal/public/

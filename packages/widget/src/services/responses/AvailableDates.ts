@@ -7,7 +7,7 @@ export interface AvailableDateResponse {
 	 * Cheapest award on this day, in points.
 	 *
 	 * SpicyTool prices its calendar, so availability comes with a real number
-	 * attached — which is what lets SpicyQuote rate days on the heat scale
+	 * attached — which is what lets SpicyTools rate days on the heat scale
 	 * instead of only saying "there is a flight". Absent when the backend
 	 * reports availability without pricing.
 	 */

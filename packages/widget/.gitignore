@@ -6,6 +6,6 @@ nbproject
 # Build output
 dist/demo.min.js
 dist/demo.min.js.LICENSE.txt
-dist/spicyquote.min.css
-dist/spicyquote.min.js
-dist/spicyquote.min.js.LICENSE.txt
+dist/spicytools.min.css
+dist/spicytools.min.js
+dist/spicytools.min.js.LICENSE.txt

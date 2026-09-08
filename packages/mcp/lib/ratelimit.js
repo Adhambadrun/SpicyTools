@@ -12,7 +12,7 @@
 // limit, not a hard security boundary.
 
 const WINDOW_MS = 60 * 60_000; // 1 hour
-const MAX_PER_WINDOW = Number(process.env.SPICYQUOTE_MCP_RATE_LIMIT || 30);
+const MAX_PER_WINDOW = Number(process.env.SPICYTOOLS_MCP_RATE_LIMIT || process.env.SPICYQUOTE_MCP_RATE_LIMIT || 30);
 
 const hits = new Map(); // ip -> array of timestamps within the current window
 

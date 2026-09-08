@@ -1,18 +1,22 @@
-# `apps/web` — the SpicyQuote app
+# `apps/web` — the SpicyTools app
 
 One plain-Node process (no framework) that serves the whole product on one port:
 
 | Route | What it serves |
 | :- | :- |
-| `/` | the SpicyQuote site — hero, search widget, spice board, agent tools, dataset stats |
+| `/` | the SpicyTools site — hero, search widget, spice board, agent tools, dataset stats |
 | `/widget/*` | the built widget bundle, straight out of `packages/widget/dist` |
 | `/api/deals` | the deal feed, rated — `{ count, disclaimer, deals[] }` (add `?links=1` for the outbound search links) |
-| `/api/deals/:id/links` | Kayak / Google Flights / ITA Matrix / PointsYeah / SpicyQuote links + the Sabre command for one fare |
+| `/api/deals/:id/links` | Kayak / Google Flights / ITA Matrix / PointsYeah / SpicyTools links + the Sabre command for one fare |
 | `/api/v1/*`, `/api/v2/*` | SpicyTool-shaped search API: airports typeahead, priced calendar, award search, providers, health |
 | `/bcf-widget.user.js` | the BCF floating widget userscript, straight out of `packages/bcf-widget/dist` |
-| `/api/tools` | metadata for all 14 MCP tools, read out of the tool registry |
+| `/terminal` | SpicyTools Terminal — the single-file page built into `packages/terminal/public` |
+| `/api/terminal/convert` | `POST { text }` → GDS black-window itinerary, straight from the Terminal engine |
+| `/link/` , `/link/app.html` | SpicyTools Link (login + tool). `app.html` is only served with a valid session cookie |
+| `/link/api/*` | its sign-in API: `request-code`, `verify`, `session`, `health` |
+| `/api/tools` | metadata for all 15 MCP tools, read out of the tool registry |
 | `/api/datasets` | travel-hacking dataset sizes, sections and freshness dates |
-| `/mcp` | the SpicyQuote MCP endpoint, mounted in-process (stateless streamable-HTTP) |
+| `/mcp` | the SpicyTools MCP endpoint, mounted in-process (stateless streamable-HTTP) |
 | `/health` | `{ ok, service, tools, dealsInFeed }` |
 
 ```bash
@@ -29,8 +33,8 @@ standalone.
 ## How the pieces fit
 
 ```text
-browser ──► app.js ──► SpicyQuote.init({ hotDeals, onSearch })   [packages/widget]
-   │            └────► SpicyQuote.applyDeal(deal)                [fills the form]
+browser ──► app.js ──► SpicyTools.init({ hotDeals, onSearch })   [packages/widget]
+   │            └────► SpicyTools.applyDeal(deal)                [fills the form]
    └──► /api/deals, /api/tools, /api/datasets                    [this server]
 agent ──► /mcp ──► api/mcp.js ──► lib/tools.js ──► lib/dataset.js ──► toolkit/data/*.json
 ```
@@ -40,6 +44,13 @@ shims the two Vercel helpers it relies on (`res.status().json()` and a pre-parse
 the same code path runs locally and in the serverless deployment.
 
 `npm run mcp` runs that handler standalone on `:3900` if you only want the agent endpoint.
+
+Terminal and Link are the same process too: the Terminal page is served from
+`packages/terminal/public/index.html` (built output), and Link's four Vercel-style handlers are
+imported from `packages/link/api/*` and mounted under `/link/api/*` — the same
+`res.status().json()` shim the MCP handler uses. Link needs `RESEND_API_KEY` to email approval
+codes; without it the handlers run in local mode and the code is printed to the console and
+returned in the response.
 
 ## Notes
 

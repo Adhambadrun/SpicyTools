@@ -1,4 +1,4 @@
-# `@spicyquote/mcp` — the SpicyQuote MCP server
+# `@spicytools/mcp` — the SpicyTools MCP server
 
 One MCP endpoint that lets any agent answer the only two questions that matter when
 booking a trip: **how hot is this fare?** and **what is the smartest way to pay for it?**
@@ -14,7 +14,7 @@ Claude, ChatGPT, Cursor or any other MCP client can register it with one line.
 
 ## The heat scale
 
-SpicyQuote never invents a bargain. Give a tool a price and the price the route
+SpicyTools never invents a bargain. Give a tool a price and the price the route
 normally sells at and it rates the fare:
 
 | Discount vs. baseline | Heat | Chillies |
@@ -38,7 +38,7 @@ npm run smoke               # end-to-end test: initialize → tools/list → too
 
 ```bash
 curl -s localhost:3900/health | jq
-# { "ok": true, "service": "spicyquote-mcp", "dealsInFeed": 12, ... }
+# { "ok": true, "service": "spicytools-mcp", "dealsInFeed": 12, ... }
 ```
 
 Register it in a client with `http://localhost:3900/mcp`.
@@ -92,9 +92,9 @@ The only credential involved is the *outbound* proxy secret below, held server-s
 
 | Var | Default | Purpose |
 | :- | :- | :- |
-| `SPICYQUOTE_MCP_API_BASE_URL` | `https://agentsearch-api.vercel.app` | Upstream web-search API. |
-| `SPICYQUOTE_MCP_PROXY_SECRET` | _(empty)_ | RapidAPI proxy secret sent as `X-RapidAPI-Proxy-Secret`. Without it the guarded `/v1/*` routes return 403. |
-| `SPICYQUOTE_MCP_RATE_LIMIT` | `30` | Soft per-IP `tools/call` cap per hour (in-memory, per instance). |
+| `SPICYTOOLS_MCP_API_BASE_URL` | `https://agentsearch-api.vercel.app` | Upstream web-search API. |
+| `SPICYTOOLS_MCP_PROXY_SECRET` | _(empty)_ | RapidAPI proxy secret sent as `X-RapidAPI-Proxy-Secret`. Without it the guarded `/v1/*` routes return 403. |
+| `SPICYTOOLS_MCP_RATE_LIMIT` | `30` | Soft per-IP `tools/call` cap per hour (in-memory, per instance). |
 | `PORT` | `3900` | Local dev server port. |
 
 ## Project layout
@@ -105,7 +105,7 @@ api/health.js     GET /health — service, deal-feed size, feed freshness
 lib/tools.js      All 14 tool definitions (zod schemas + handlers)
 lib/dataset.js    Read-only loader for the bundled JSON datasets
 lib/ratelimit.js  Soft per-IP cap on the metered web tools
-data/hot-deals.json  SpicyQuote deal feed (SAMPLE DATA — replace it)
+data/hot-deals.json  SpicyTools deal feed (SAMPLE DATA — replace it)
 local-server.js   Plain-Node dev server (not deployed)
 test/smoke.mjs    Real end-to-end test: health, initialize, tools/list, tools/call
 vercel.json       Routes /mcp → api/mcp.js, /health → api/health.js
@@ -115,7 +115,7 @@ server.json       MCP registry manifest
 ## Deploying
 
 `vercel.json` is ready: `vercel deploy` from this directory publishes
-`/mcp` and `/health` as serverless functions. Set the three `SPICYQUOTE_MCP_*`
+`/mcp` and `/health` as serverless functions. Set the three `SPICYTOOLS_MCP_*`
 variables in the project settings, then register `https://<deployment>/mcp` in your
 MCP client.
 

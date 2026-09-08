@@ -1,13 +1,17 @@
-// apps/web/server.mjs — the SpicyQuote master app.
+// apps/web/server.mjs — the SpicyTools master app.
 //
 // One process, one port, everything the product needs:
 //
-//   /                 SpicyQuote site (search widget + spice board)
+//   /                 SpicyTools site (search widget + spice board)
 //   /widget/*         the built widget bundle (packages/widget/dist)
+//   /terminal         SpicyTerminal — flights → GDS black window (packages/terminal)
+//   /link             SpicyTools Link — GDS → booking links (packages/link), 2FA-gated
+//   /link/api/*       its sign-in API: request-code, verify, session, health
+//   /bcf-widget.user.js  the BCF floating widget userscript
 //   /api/deals        the deal feed, rated (same heat model as the widget + MCP)
 //   /api/tools        metadata for every MCP tool, read straight from the registry
 //   /api/datasets     travel-hacking dataset sizes and freshness
-//   /mcp              the SpicyQuote MCP endpoint (mounted in-process)
+//   /mcp              the SpicyTools MCP endpoint (mounted in-process)
 //   /api/v1/health    SpicyTool-compatible API surface
 //   /api/v1/airports  airport typeahead (SpicyTool shape)
 //   /api/v2/search    award search (SpicyTool shape)
@@ -29,16 +33,30 @@ import { registerTools, rateDeal } from '../../packages/mcp/lib/tools.js';
 import { loadDataset, entries, metaOf } from '../../packages/mcp/lib/dataset.js';
 import { createRequire } from 'node:module';
 
-// The BCF widget's link builders — reused here so a SpicyQuote deal opens in
+import handleRequestCode from '../../packages/link/api/request-code.js';
+import handleVerify from '../../packages/link/api/verify.js';
+import handleSession from '../../packages/link/api/session.js';
+import handleLinkHealth from '../../packages/link/api/health.js';
+import { handleSession as checkSession, DEFAULT_AUTH_SECRET } from '../../packages/link/lib/core.js';
+
+// The BCF widget's link builders — reused here so a SpicyTools deal opens in
 // the same places an agent's BCF lead does.
 const require = createRequire(import.meta.url);
 const flightLinks = require('../../packages/bcf-widget/src/flight-links.js');
+
+// The Terminal engine is plain CommonJS and deliberately DOM-free, so the same
+// deterministic converter powers the page and this API.
+const SpicyEngine = require('../../packages/terminal/spicy_engine.js');
+
+const pad2 = (n) => String(n).padStart(2, '0');
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = resolve(HERE, 'public');
 const WIDGET_DIR = resolve(HERE, '../../packages/widget/dist');
 const AIRPORTS_FILE = resolve(HERE, '../../packages/spicytool/backend/data/airports.json');
 const BCF_DIR = resolve(HERE, '../../packages/bcf-widget/dist');
+const TERMINAL_PAGE = resolve(HERE, '../../packages/terminal/public/index.html');
+const LINK_DIR = resolve(HERE, '../../packages/link');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -103,7 +121,7 @@ try {
   // as flat records carrying their own code.
   AIRPORTS = Object.keys(raw).map((code) => ({ code, ...raw[code] }));
 } catch (err) {
-  console.warn(`[spicyquote] could not read ${AIRPORTS_FILE}: ${err.message}`);
+  console.warn(`[spicytools] could not read ${AIRPORTS_FILE}: ${err.message}`);
 }
 
 const airportScore = (airport, needle) => {
@@ -173,7 +191,7 @@ const proxySpicyTool = (apiPath) =>
   });
 
 /**
- * Turn a SpicyQuote deal into the lead shape the BCF builders expect.
+ * Turn a SpicyTools deal into the lead shape the BCF builders expect.
  */
 function leadFromDeal(deal) {
   return {
@@ -204,7 +222,7 @@ function dealLinks(deal) {
     googleElr: flightLinks.buildGoogleFlightsUrl(lead, true),
     matrix: flightLinks.buildMatrixUrl(lead, null, null, null, 0),
     pointsYeah: flightLinks.buildPointsYeahUrl(lead, leg, 0),
-    spicyQuote: flightLinks.buildSpicyQuoteUrl(lead, leg),
+    spicyQuote: flightLinks.buildSpicyToolsUrl(lead, leg),
     fastSearch: flightLinks.buildFastSearchCommand(lead)
   };
 }
@@ -343,7 +361,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/health' || pathname === '/api/health') {
       return sendJson(res, 200, {
         ok: true,
-        service: 'spicyquote',
+        service: 'spicytools',
         tools: TOOLS.length,
         dealsInFeed: allDeals().length,
       });
@@ -375,7 +393,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/v1/health') {
         return sendJson(res, 200, {
           status: 'ok',
-          service: 'spicyquote',
+          service: 'spicytools',
           upstream: SPICYTOOL_API_BASE || null,
           airports: AIRPORTS.length,
           deals: allDeals().length,
@@ -415,6 +433,100 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { id, links: dealLinks(deal) });
     }
 
+    // --- SpicyTools Link (packages/link): GDS itinerary → booking links ---
+    // The two-factor gate is real: /link/app.html is only served to a signed-in
+    // tab, and the sign-in API is the package's own handlers, mounted as-is.
+    if (pathname.startsWith('/link/api/')) {
+      withVercelHelpers(res);
+
+      if (req.method === 'POST') {
+        const raw = await readBody(req);
+        try {
+          req.body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return sendJson(res, 400, { error: 'Invalid request body.' });
+        }
+      }
+
+      if (pathname === '/link/api/request-code') return handleRequestCode(req, res);
+      if (pathname === '/link/api/verify') return handleVerify(req, res);
+      if (pathname === '/link/api/session') return handleSession(req, res);
+      if (pathname === '/link/api/health') return handleLinkHealth(req, res);
+
+      return sendJson(res, 404, { error: 'not_found' });
+    }
+
+    if (pathname === '/link' || pathname === '/link/') {
+      return sendFile(res, join(LINK_DIR, 'index.html'));
+    }
+
+    if (pathname === '/link/app.html') {
+      // Server-side half of the gate: no valid session cookie, no tool. The
+      // page itself repeats the check client-side (per tab + 5-minute idle).
+      const session = checkSession({
+        cookieHeader: req.headers.cookie,
+        secret: process.env.AUTH_SECRET || DEFAULT_AUTH_SECRET
+      });
+
+      if (session.status !== 200) {
+        return res.writeHead(302, { location: '/link/' }).end();
+      }
+
+      return sendFile(res, join(LINK_DIR, 'app.html'));
+    }
+
+    if (pathname === '/link/dead-end.jpg') {
+      return sendFile(res, join(LINK_DIR, 'Dead end.jpg'));
+    }
+
+    // --- SpicyTools Terminal (packages/terminal): flights → GDS black window ---
+    if (pathname === '/terminal' || pathname === '/terminal/') {
+      if (!existsSync(TERMINAL_PAGE)) {
+        return sendJson(res, 404, {
+          error: 'not_built',
+          message: 'Run `npm run build --workspace @spicytools/terminal` first.'
+        });
+      }
+
+      return sendFile(res, TERMINAL_PAGE);
+    }
+
+    // Same engine, exposed for agents: POST { text } → GDS black window.
+    if (pathname === '/api/terminal/convert' && req.method === 'POST') {
+      const raw = await readBody(req);
+      let payload = {};
+
+      try {
+        payload = JSON.parse(raw || '{}');
+      } catch {
+        return sendJson(res, 400, { error: 'invalid_json' });
+      }
+
+      const text = String(payload.text || '');
+
+      if (!text.trim()) {
+        return sendJson(res, 400, { error: 'empty', message: 'Send { text: "…" } to convert.' });
+      }
+
+      const [segments, warnings] = SpicyEngine.parse(text);
+
+      return sendJson(res, 200, {
+        itinerary: SpicyEngine.renderItinerary(segments),
+        segments: segments.map((s) => ({
+          airline: s.airline,
+          flightNumber: s.flight_no,
+          origin: s.origin,
+          destination: s.destination,
+          date: s.ymd || null,
+          departure: s.depH === undefined || s.depH === null ? null : `${pad2(s.depH)}:${pad2(s.depM)}`,
+          arrival: s.arrH === undefined || s.arrH === null ? null : `${pad2(s.arrH)}:${pad2(s.arrM)}`,
+          cabin: s.cls || null,
+          aircraft: s.aircraft || null
+        })),
+        warnings
+      });
+    }
+
     // --- BCF widget: the userscript, so a host can point an installer at it ---
     if (pathname === '/bcf-widget.user.js') {
       const bundle = join(BCF_DIR, 'bcf-floating-flight-search-widget.user.js');
@@ -422,7 +534,7 @@ const server = http.createServer(async (req, res) => {
       if (!existsSync(bundle)) {
         return sendJson(res, 404, {
           error: 'not_built',
-          message: 'Run `npm run build --workspace @spicyquote/bcf-widget` first.'
+          message: 'Run `npm run build --workspace @spicytools/bcf-widget` first.'
         });
       }
 
@@ -468,7 +580,7 @@ const server = http.createServer(async (req, res) => {
     const target = safeJoin(PUBLIC_DIR, pathname);
     return target ? sendFile(res, target) : sendJson(res, 403, { error: 'forbidden' });
   } catch (err) {
-    console.error('[spicyquote] error:', err);
+    console.error('[spicytools] error:', err);
     if (!res.headersSent) {
       sendJson(res, 500, { error: 'internal', message: String(err.message || err) });
     }
@@ -476,12 +588,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 // The widget bundle is build output (git-ignored), so a fresh clone has none yet.
-if (!existsSync(join(WIDGET_DIR, 'spicyquote.min.js'))) {
+if (!existsSync(join(WIDGET_DIR, 'spicytools.min.js'))) {
   console.warn('  ⚠  No widget bundle in packages/widget/dist — run `npm run build` to generate it.');
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`\n  🌶  SpicyQuote running at http://localhost:${PORT}`);
+  console.log(`\n  🌶  SpicyTools running at http://localhost:${PORT}`);
   console.log(`      MCP endpoint   /mcp            (${TOOLS.length} tools)`);
   console.log(`      Deal feed      /api/deals`);
   console.log(`      Tool registry  /api/tools`);

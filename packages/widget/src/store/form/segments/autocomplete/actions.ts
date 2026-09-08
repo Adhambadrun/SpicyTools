@@ -376,7 +376,7 @@ export const loadNearestAirportForAutocomplete = (autocompleteType: Autocomplete
 		// SpicyTool exposes no IP-geolocation endpoint, and guessing an airport
 		// from an IP would put the wrong city in the form — so this is a no-op
 		// rather than a fabricated suggestion. Use `defaultDepartureAirport`.
-		console.warn('[SpicyQuote] `useNearestAirport` needs an IP-geolocation endpoint, which SpicyTool does not provide. Set `defaultDepartureAirport` instead.');
+		console.warn('[SpicyTools] `useNearestAirport` needs an IP-geolocation endpoint, which SpicyTool does not provide. Set `defaultDepartureAirport` instead.');
 	};
 };
 

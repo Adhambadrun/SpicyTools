@@ -1,7 +1,7 @@
 // packages/bcf-widget/build.mjs — assemble the userscript from src/.
 //
 // The widget is authored as two files so the URL builders can also be used
-// from Node (the SpicyQuote site renders the same links for its deals), but a
+// from Node (the SpicyTools site renders the same links for its deals), but a
 // userscript has to be a single self-contained file, so we concatenate:
 //
 //   src/flight-links.js  (pure builders, no DOM)
@@ -19,17 +19,17 @@ const HEADER = `// ==UserScript==
 // @name         BCF Floating Flight Search Widget
 // @namespace    bcf-flight-widget
 // @version      1.0.0
-// @description  Floating flight search helper for Bo.BCFlights.com — lead detection, Kayak / Google Flights / ITA Matrix / PointsYeah / SpicyQuote links, Sabre Fast Search, VIP itinerary maker, GK converter and PNR tools. Powered by SpicyQuote.
+// @description  Floating flight search helper for Bo.BCFlights.com — lead detection, Kayak / Google Flights / ITA Matrix / PointsYeah / SpicyTools links, Sabre Fast Search, VIP itinerary maker, GK converter and PNR tools. Powered by SpicyTools.
 // @match        https://bo.bcflights.com/*
 // @grant        none
 // ==/UserScript==
 //
-// BCF Floating Flight Search Widget — part of SpicyQuote.
+// BCF Floating Flight Search Widget — part of SpicyTools.
 //
 // Ported from the TBC Floating Flight Search Widget (v12.2). Every reference
 // to TBC / bo.travelbusinessclass.com has been replaced with BCF /
-// bo.bcflights.com, the flybasis leg button now opens SpicyQuote, and the
-// palette is SpicyQuote's "dark smoke & hot sauce".
+// bo.bcflights.com, the flybasis leg button now opens SpicyTools, and the
+// palette is SpicyTools's "dark smoke & hot sauce".
 //
 // Source (edit these, then \`npm run build\`):
 //   packages/bcf-widget/src/flight-links.js
@@ -53,7 +53,7 @@ ${links.replace(/if \(typeof module[\s\S]*$/m, '')}
 ${banner('widget.js — the floating panel, lead detection and embedded tools')}
 ${widget}
 
-  // Let the host page (and SpicyQuote itself) reuse the builders.
+  // Let the host page (and SpicyTools itself) reuse the builders.
   window.BCF = {
     version: '1.0.0',
     get currentLead() { return FX.currentLead; },
@@ -61,7 +61,7 @@ ${widget}
     buildGoogleFlightsUrl,
     buildMatrixUrl,
     buildPointsYeahUrl,
-    buildSpicyQuoteUrl,
+    buildSpicyToolsUrl,
     setSearchBase,
     buildFastSearchCommand,
     cabinLabel,

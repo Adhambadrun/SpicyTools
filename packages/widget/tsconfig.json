@@ -9,11 +9,11 @@
 		"allowJs": true,
 		"baseUrl": ".",
 		"paths": {
-			"@spicyquote/react-datepicker": [
+			"@spicytools/react-datepicker": [
 				"node_modules/react-datepicker",
 				"../../node_modules/react-datepicker"
 			],
-			"@spicyquote/react-select": [
+			"@spicytools/react-select": [
 				"node_modules/react-select",
 				"../../node_modules/react-select"
 			]

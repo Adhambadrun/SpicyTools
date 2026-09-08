@@ -17,7 +17,7 @@ interface DemoFormState {
 const defaultLang = Language.Russian;
 const defaultWebskyURL = 'http://demo.websky.aero/gru';
 // SpicyTool API used by the playground — point `apiBase` at your own.
-const defaultSpicyURL = 'https://api.spicyquote.app';
+const defaultSpicyURL = 'https://api.spicytools.app';
 
 export default class Demo extends React.Component<any, DemoFormState> {
 	config: SystemState = {
@@ -92,7 +92,7 @@ export default class Demo extends React.Component<any, DemoFormState> {
 						<label>
 							<div className="widget-demo-config__description">
 								Config handed to init():
-								<CodeBlock>SpicyQuote.init(...config)</CodeBlock>
+								<CodeBlock>SpicyTools.init(...config)</CodeBlock>
 							</div>
 
 							<textarea className="form-control" rows={numOfTextAreaRows} value={this.state.generatedConfig} onClick={this.textAreaClickHandler} spellCheck={false}/>
@@ -125,7 +125,7 @@ export default class Demo extends React.Component<any, DemoFormState> {
 								<CodeBlock>spicyURL</CodeBlock>: URL of the fare API
 							</div>
 
-							<input type="text" className="form-control" value={this.state.spicyURL} placeholder="https://api.spicyquote.app" onChange={e => {
+							<input type="text" className="form-control" value={this.state.spicyURL} placeholder="https://api.spicytools.app" onChange={e => {
 								this.config.spicyURL = e.target.value;
 								this.setState({
 									spicyURL: e.target.value

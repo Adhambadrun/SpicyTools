@@ -1,5 +1,5 @@
 // Tests for the BCF link builders: the URLs are the product here, so they are
-// pinned exactly. Run with `npm test --workspace @spicyquote/bcf-widget`.
+// pinned exactly. Run with `npm test --workspace @spicytools/bcf-widget`.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -123,9 +123,9 @@ test('PointsYeah: a leg without a date yields no link', () => {
 	assert.equal(links.buildPointsYeahUrl(ROUND_TRIP, { origin: 'CAI', destination: 'JFK' }, 0), null);
 });
 
-test('SpicyQuote: deep link uses the SpicyTool search query shape', () => {
+test('SpicyTools: deep link uses the SpicyTool search query shape', () => {
 	const leg = { origin: 'CAI', destination: 'JFK', date: '2026-09-15' };
-	const url = links.buildSpicyQuoteUrl(ROUND_TRIP, leg);
+	const url = links.buildSpicyToolsUrl(ROUND_TRIP, leg);
 	const params = new URL(url).searchParams;
 
 	assert.equal(params.get('origin'), 'CAI');

@@ -3,7 +3,7 @@ import { Airport } from './services/models/Airport';
 /**
  * A fare worth shouting about.
  *
- * SpicyQuote never invents prices: a deal is only as hot as the numbers the site
+ * SpicyTools never invents prices: a deal is only as hot as the numbers the site
  * owner feeds in. Give us `price` and `baselinePrice` (the fare this route usually
  * sells at) and the widget works out the heat; give us only `price` and we call it
  * `mild` rather than pretending it is a steal.

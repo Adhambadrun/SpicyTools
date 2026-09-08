@@ -1,0 +1,2975 @@
+/* app.js — SpicyTerminal Web UI — Instant Conversion & AI Self-Learner
+   Features:
+   - Bounded screenshot OCR: lazy-loaded worker path plus a no-hang fallback
+   - Native TextDetector API + bundled pure JS OCRAD fallback
+   - Aviation-aware OCR cleaner (repairs glyph confusions in flight numbers, times, airports, dates)
+   - `AI FIX`: the repair pass — auto-raced when the direct read finds nothing, and re-pressable by hand
+   - AI is never the primary path: text and legible screenshots convert offline first
+   - Continuous AI mistake detection & self-healing engine ("teaches the tool to fix it")
+   - Weekly performance & enhancement report generator sent to adhambadraan@gmail.com
+   - Text cache (fingerprint -> output) & Image cache (hash -> output) for instant repeat
+   - Clean, lightweight, zero telemetry sent to external tracking servers
+*/
+(function () {
+"use strict";
+var $ = function (id) { return document.getElementById(id); };
+var inp = $("inp"), out = $("out"), st = $("st");
+var images = [];
+var documents = [];
+var lastOut = "";
+var converting = false;
+var aiRequestId = 0;
+var lastTextFp = "";
+var nextAttachmentId = 0;
+var activeReviewImageId = null;
+
+// Attachment state is deliberately separate from the input text.  A file
+// picker can return an empty/incorrect MIME type and several files can finish
+// decoding in a different order, so relying on File.type or Promise timing
+// makes the converter appear to randomly do nothing.
+var attachmentVersion = 0; // clear-generation; old callbacks cannot repaint after clear
+var latestAttachmentBatch = 0;
+var pendingImageJobs = 0;
+
+var pendingDocumentJobs = 0;
+var imageParseVersion = -1;
+var imageParsePromise = null;
+
+// Speculative AI fallback state. When the fast direct OCR passes have not
+// produced segments after AI_SPECULATE_AFTER_MS, the Gemini call is started
+// immediately and races the remaining bounded direct re-reads instead of
+// waiting for them serially (which was 14.5s of local grinding before the
+// request even left the browser — the "attachment takes forever" path).
+var aiSpeculation = { batch: 0, fired: false, painted: false, done: false, timer: null };
+var directPaintedBatch = 0;
+var AUTHOR_EMAIL = "adhambadraan@gmail.com";
+
+/* ---------- utils ---------- */
+function setStatus(msg, warn) { st.textContent = msg; st.title = msg; st.className = warn ? "warn" : ""; }
+function nowMs() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+function invalidateAiForAttachmentChange() {
+  // The network request itself cannot be reliably cancelled in every browser,
+  // but its response must never repaint a newer attachment set.
+  if (converting) {
+    aiRequestId++;
+    converting = false;
+    window._aiStartedAt = 0;
+  }
+}
+function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function gemKey() { return localStorage.getItem("spicy_gem_key") || ""; }
+function hashStr(s){
+  var h=5381;
+  for(var i=0;i<s.length;i++) h=((h<<5)+h + s.charCodeAt(i))>>>0;
+  return h.toString(36)+"-"+s.length.toString(36);
+}
+function fp(text) {
+  var t = (text || "").toLowerCase().replace(/\s+/g, " ").trim(), h = 5381;
+  for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+/* ---------- telemetry & weekly stats ---------- */
+/* LEARNER:STATS */
+/* The report these counters feed is a WEEKLY report, so the counters are a
+   week (Monday 00:00 UTC) and a closed week is archived, not carried forward:
+   a lifetime total printed under a "WEEKLY" heading is a number nobody can act
+   on, and it never reset. `lifetime` is kept alongside so "since install" is
+   still one read away.
+
+   Two counting rules, both from wrong numbers in a real report:
+     * `total` counts conversions the user was shown — never AI requests. A
+       speculative Gemini call that lost the race to the direct read used to be
+       counted as a conversion too, so one screenshot reported as two (total 6
+       for 5 conversions, "83% instant rate" for a week that was 100% instant).
+     * a debounced re-render while the user is still typing is not a conversion
+       either; it used to add one "text_direct" per 55ms pause. */
+var STATS_KEY = "spicy_weekly_stats_v1";
+var STATS_HISTORY_MAX = 8;
+var STATS_COUNTER_KEYS = ["total", "textDirect", "imgDirect", "aiResolved", "aiCalls"];
+
+function statsWeekStart(now) {
+  var d = new Date(now || Date.now());
+  var shift = (d.getUTCDay() + 6) % 7;                       // Monday is day 0
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - shift);
+}
+function statsDayKey(now) { return new Date(now || Date.now()).toISOString().slice(0, 10); }
+function statsEmptyPeriod() {
+  return { total: 0, textDirect: 0, imgDirect: 0, aiResolved: 0, aiCalls: 0, durations: [] };
+}
+function statsNormalizePeriod(p) {
+  var src = p || {}, out = statsEmptyPeriod();
+  out.total = Number(src.total) || 0;
+  out.textDirect = Number(src.textDirect !== undefined ? src.textDirect : src.textOffline) || 0;
+  out.imgDirect = Number(src.imgDirect !== undefined ? src.imgDirect : src.imgOffline) || 0;
+  out.aiResolved = Number(src.aiResolved) || 0;
+  out.aiCalls = Number(src.aiCalls !== undefined ? src.aiCalls : src.aiFallback) || 0;
+  out.durations = (Array.isArray(src.durations) ? src.durations : [])
+    .filter(function(n) { return typeof n === "number" && n > 0; })
+    .slice(-50);
+  return out;
+}
+function statsLifetimeOf(period) {
+  var out = {};
+  STATS_COUNTER_KEYS.forEach(function(k) { out[k] = Number(period && period[k]) || 0; });
+  return out;
+}
+function statsAddCounters(target, delta) {
+  STATS_COUNTER_KEYS.forEach(function(k) { target[k] = (Number(target[k]) || 0) + (Number(delta && delta[k]) || 0); });
+  return target;
+}
+function statsSave(s) {
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) {}
+}
+/* Always returns { week, period, lifetime, history } for the week containing
+   `now`. A store from an earlier week is rolled over here — on read — so the
+   report is correct even if the tab was closed across a week boundary. */
+function loadStats(now) {
+  var week = statsDayKey(statsWeekStart(now));
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem(STATS_KEY) || "{}") || {}; } catch (e) { raw = {}; }
+
+  var s = { week: week, period: statsEmptyPeriod(), lifetime: statsLifetimeOf(null), history: [] };
+
+  // Store written before the weekly window existed: flat lifetime counters.
+  // Keep them as the lifetime total and open this week at zero — relabelling a
+  // lifetime total as one week's numbers would be a lie in the report.
+  if (!raw.period && typeof raw.total === "number") {
+    s.lifetime = statsLifetimeOf(statsNormalizePeriod(raw));
+    statsSave(s);
+    return s;
+  }
+  if (!raw.period) { statsSave(s); return s; }
+
+  s.period = statsNormalizePeriod(raw.period);
+  s.lifetime = statsLifetimeOf(raw.lifetime);
+  s.history = (Array.isArray(raw.history) ? raw.history : []).slice(-STATS_HISTORY_MAX);
+
+  if (raw.week && raw.week !== week) {
+    s.history.push({ week: raw.week, total: s.period.total, textDirect: s.period.textDirect,
+                     imgDirect: s.period.imgDirect, aiResolved: s.period.aiResolved, aiCalls: s.period.aiCalls });
+    s.history = s.history.slice(-STATS_HISTORY_MAX);
+    statsAddCounters(s.lifetime, s.period);
+    s.period = statsEmptyPeriod();
+    s.week = week;
+    statsSave(s);
+  }
+  return s;
+}
+/* type: text_direct | text_cached | img_direct | ai_painted  -> a conversion
+         ai_call                                             -> an AI request  */
+function recordStat(type, durationMs) {
+  try {
+    var s = loadStats();
+    var bump = { total: 0, textDirect: 0, imgDirect: 0, aiResolved: 0, aiCalls: 0 };
+    if (type === "text_direct" || type === "text_offline" || type === "text_cached") { bump.total = 1; bump.textDirect = 1; }
+    else if (type === "img_direct" || type === "img_offline") { bump.total = 1; bump.imgDirect = 1; }
+    else if (type === "ai_painted") { bump.total = 1; bump.aiResolved = 1; }
+    else if (type === "ai_call" || type === "ai_fallback") { bump.aiCalls = 1; }
+    else return;
+
+    statsAddCounters(s.period, bump);
+    statsAddCounters(s.lifetime, bump);
+    if ((type === "img_direct" || type === "img_offline") &&
+        typeof durationMs === "number" && durationMs > 0) {
+      s.period.durations.push(Math.round(durationMs));
+      if (s.period.durations.length > 50) s.period.durations.shift();
+    }
+    statsSave(s);
+  } catch (e) {}
+}
+
+/* LEARNER:BEGIN */
+/* ---------- AI mistake detection & self-learning log ---------- */
+var MISTAKES_KEY = "spicy_mistakes_log_v1";
+var RULES_KEY = "spicy_learned_rules_v1";
+var RULES_PRUNED_KEY = "spicy_learned_rules_pruned_v2";
+
+function loadMistakes() {
+  try { return JSON.parse(localStorage.getItem(MISTAKES_KEY) || "[]"); } catch (e) { return []; }
+}
+function recordMistake(entry) {
+  try {
+    var list = loadMistakes();
+    list.unshift(entry);
+    localStorage.setItem(MISTAKES_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch (e) {}
+}
+
+function loadLearnedRules() {
+  try {
+    var rules = JSON.parse(localStorage.getItem(RULES_KEY) || "[]");
+    if (!Array.isArray(rules)) return [];
+    if (localStorage.getItem(RULES_PRUNED_KEY) === null) {
+      // v1 rule stores were built by the position-based learner and are full of
+      // self-cancelling, non-glyph "corrections" (AA 137 -> AA 7037S next to
+      // AA 7037S -> AA 137). Those rewrite correct flight numbers, so a store
+      // written before the identity-paired learner is swept once, on load, and
+      // never touched again after that.
+      var kept = pruneLearnedRules(rules);
+      try {
+        if (kept.length !== rules.length) localStorage.setItem(RULES_KEY, JSON.stringify(kept));
+        localStorage.setItem(RULES_PRUNED_KEY, String(kept.length));
+      } catch (e) {}
+      return kept;
+    }
+    return rules;
+  } catch (e) { return []; }
+}
+function pruneLearnedRules(rules) {
+  var kept = [];
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    if (!r || !r.pattern || r.pattern === r.replacement) continue;
+    // Drop anything the current learner would never have taught: a rule that is
+    // not a look-alike substitution, or one whose reverse is also stored.
+    if (!isPlausibleGlyphConfusion(r.pattern, r.replacement)) continue;
+    var reversed = false;
+    for (var j = 0; j < kept.length; j++)
+      if (kept[j].pattern === r.replacement && kept[j].replacement === r.pattern) { reversed = true; break; }
+    if (reversed) { kept.splice(j, 1); }   // the pair cancels: keep neither side
+    else kept.push(r);
+  }
+  return kept;
+}
+function teachRule(rule) {
+  /* A learned rule rewrites future OCR text, so a bad rule is worse than no
+     rule: it silently changes real flights. Three gates, all derived from the
+     self-inflicted rule loop in the 2026-09-07 weekly report:
+       * the two sides must be a genuine glyph confusion, not a different
+         flight (AA 6935Q -> AA 6618O is not `1`-for-`I`, it is another leg);
+       * `A -> B` and `B -> A` may never coexist (they cancel each other and
+         the tool oscillates between two answers);
+       * an equal-length rule replaces its own output, so re-adding a
+         *different* pair would silently delete the original. */
+  try {
+    if (!rule || !rule.pattern || !rule.replacement) return null;
+    if (rule.pattern === rule.replacement) return null;
+    if (!isPlausibleGlyphConfusion(rule.pattern, rule.replacement)) {
+      return "rejected: not a glyph confusion";
+    }
+    var rules = loadLearnedRules();
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i];
+      if (r.pattern === rule.pattern && r.replacement === rule.replacement) {
+        r.evidence = (r.evidence || 1) + 1;      // seen again: strengthen it
+        r.why = rule.why || r.why;
+        try { localStorage.setItem(RULES_KEY, JSON.stringify(rules.slice(0, 60))); } catch (e) {}
+        return "strengthened";
+      }
+      if (r.pattern === rule.replacement && r.replacement === rule.pattern) {
+        // The two corrections cancel out — the "mistake" was a comparison
+        // artefact (mis-paired rows), not a misread. Forget both.
+        rules.splice(i, 1);
+        try { localStorage.setItem(RULES_KEY, JSON.stringify(rules)); } catch (e) {}
+        return "rejected: reversed pair";
+      }
+    }
+    rules.unshift(rule);
+    localStorage.setItem(RULES_KEY, JSON.stringify(rules.slice(0, 60)));
+    return "taught";
+  } catch (e) { return null; }
+}
+
+/* Two tokens are a glyph confusion when every differing character is a
+   look-alike for a scanner (O/0, I/1, S/5, Z/2, B/8, G/6, Q/0, T/7) and
+   nothing else changed.  Different length, or a digit that has nothing to do
+   with the letter it "confuses" into, means the two rows are simply two
+   different flights and there is nothing to learn. */
+/* Every differing character must be a look-alike *for a scanner*: 0/O (and Q,
+   which OCRAD reads as either), 1/I/L, 5/S, 2/Z, 8/B, 6/G, 7/T, 9/G and C/G.  Built
+   from one symmetric list so a pair cannot be added in only one direction.
+   Anything else — different length, or `7` becoming `S` — means the two rows are
+   simply two different flights, and there is nothing to learn from that. */
+var _GLYPH_GROUPS = ["0OCQ", "1IL", "5S", "2Z", "8B", "6G", "9G", "7T", "CG"];
+var _GLYPH_EQUIV = {};
+(function () {
+  for (var g = 0; g < _GLYPH_GROUPS.length; g++) {
+    var grp = _GLYPH_GROUPS[g];
+    if (grp.length < 2) continue;
+    for (var i = 0; i < grp.length; i++) {
+      var bucket = _GLYPH_EQUIV[grp[i]] || (_GLYPH_EQUIV[grp[i]] = "");
+      for (var j = 0; j < grp.length; j++) if (i !== j) bucket += grp[j];
+      _GLYPH_EQUIV[grp[i]] = bucket;
+    }
+  }
+})();
+function isPlausibleGlyphConfusion(from, to) {
+  var a = String(from).toUpperCase(), b = String(to).toUpperCase();
+  if (a.length !== b.length || !a.length) return false;
+  var diffs = 0;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] === b[i]) continue;
+    var look = _GLYPH_EQUIV[a[i]];
+    if (!look || look.indexOf(b[i]) < 0) return false;
+    diffs++;
+  }
+  return diffs > 0 && diffs <= 3;
+}
+
+/* Only flight rows of a GDS itinerary — and only of the *itinerary* part.
+   renderItinerary() ends with a `<--additional-->` block echoing
+   `1 AA 6935Q 12OCT`; that block is a booking-command suggestion, not a leg.
+   Reading it as one is what produced "direct found 12, AI found 8" for a
+   four-leg trip, and every comparison under that count was mis-paired. */
+function flightRowsOf(text) {
+  var lines = String(text || "").split("\n");
+  var rows = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (l.indexOf("-->") >= 0 || l.indexOf("additional") >= 0) break;  // echo block ends the itinerary
+    if (/^(DEP|ARR|CABIN|STOP|OSI|SSR|RMK|END|TKT|FCNV|PATA)/i.test(l)) continue;
+    var p = l.trim().split(/\s+/);
+    if (!/^\d{1,3}$/.test(p[0] || "")) continue;
+    if (!/^[A-Z0-9]{2}$/.test((p[1] || "").toUpperCase())) continue;
+    if (!(p[2] || "")) continue;
+    rows.push({
+      idx: i, carrier: p[1].toUpperCase(), flt: (p[2] || "").toUpperCase(),
+      date: (p[3] || "").toUpperCase(), orig: (p[4] || "").toUpperCase(),
+      dest: (p[5] || "").toUpperCase(),
+      dep: (p[6] || ""), arr: (p[7] || ""), raw: l.trim()
+    });
+  }
+  return rows;
+}
+/* A GDS clock may carry its overnight marker (`810P¥1`, `810P+1`, `810P-1`).
+   The marker belongs to the *day*, so a comparison that leaves it attached
+   reports "810P¥1 vs 810P" as a mistake. Strip before comparing. */
+function clockCore(t) {
+  return String(t || "").replace(/[¥+‡-]\d+$/, "").toUpperCase();
+}
+/* Flight numbers are quoted with leading zeros in some sources and not in
+   others (06935 / 6935), and a scanner reads their digits as look-alike
+   letters (501 -> 50I, 505 -> SO5). Identity for pairing is therefore the
+   *digit* core with every look-alike folded back to the digit it stands for:
+   that is exactly the property that makes two rows "the same flight read
+   twice", which is the only case a correction may be learned from. */
+var _GLYPH_TO_DIGIT = { O: "0", Q: "0", D: "0", I: "1", L: "1", S: "5",
+  Z: "2", B: "8", G: "6", T: "7" };
+function flightCore(f) {
+  var out = "";
+  var s = String(f || "").toUpperCase();
+  for (var i = 0; i < s.length; i++) {
+    var c = s[i];
+    if (c >= "0" && c <= "9") out += c;
+    else if (_GLYPH_TO_DIGIT[c]) out += _GLYPH_TO_DIGIT[c];
+  }
+  return out.replace(/^0+/, "");
+}
+function dayOfMonth(d) {
+  var m = /^(\d{1,2})[A-Z]{3}$/.exec(String(d || "").toUpperCase());
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/* Analyze discrepancy between direct engine and AI result to detect mistakes & teach tool */
+function detectMistakesAndLearn(inputText, directText, aiText, reason) {
+  if (!aiText || !aiText.trim()) return;
+  var dirRows = flightRowsOf(directText);
+  var aiRows = flightRowsOf(aiText);
+  var diffNotes = [];
+  var taught = 0, skipped = 0;
+
+  if (dirRows.length !== aiRows.length) {
+    diffNotes.push("Segment count discrepancy: direct found " + dirRows.length +
+                   ", AI found " + aiRows.length +
+                   " (rows paired by flight identity, not by position)");
+  }
+
+  // Pair by identity. A row of one itinerary and the row at the same index of
+  // the other are the same flight only by accident, and every "correction"
+  // derived from an accidental pair is a rule that rewrites correct data.
+  var used = {};
+  for (var i = 0; i < dirRows.length; i++) {
+    var d = dirRows[i];
+    var cands = [];
+    for (var j = 0; j < aiRows.length; j++) {
+      if (used[j]) continue;
+      var a = aiRows[j];
+      if (a.carrier !== d.carrier) continue;
+      if (flightCore(a.flt) !== flightCore(d.flt)) continue;
+      var dd = dayOfMonth(d.date), ad = dayOfMonth(a.date);
+      if (dd !== null && ad !== null && Math.abs(dd - ad) > 1) continue;  // a different day is a different flight
+      if ((d.orig && a.orig && d.orig !== a.orig) || (d.dest && a.dest && d.dest !== a.dest)) continue;
+      cands.push(j);
+    }
+    if (cands.length !== 1) {
+      if (cands.length > 1) {
+        diffNotes.push("Flight " + (i + 1) + " " + d.carrier + " " + d.flt +
+                       ": ambiguous AI match (" + cands.length + " candidates) — not learned");
+      } else {
+        diffNotes.push("Flight " + (i + 1) + " " + d.carrier + " " + d.flt +
+                       " " + d.date + " " + d.orig + "-" + d.dest + ": no matching AI leg");
+      }
+      skipped++;
+      continue;
+    }
+    var aIdx = cands[0], aiRow = aiRows[aIdx];
+    used[aIdx] = 1;
+    if (d.flt !== aiRow.flt) {
+      diffNotes.push("Flight " + (i + 1) + " flight no: direct " + d.carrier + " " + d.flt +
+                     " vs AI " + aiRow.carrier + " " + aiRow.flt);
+      // Teach only what a scanner really does: the pattern must be present in
+      // the text we were actually given, and the fix must be a look-alike
+      // substitution. Both are checked; see teachRule/isPlausibleGlyphConfusion.
+      var pat = d.carrier + " " + d.flt, rep = aiRow.carrier + " " + aiRow.flt;
+      // A rule can only repair text that actually contains the pattern. If the
+      // misread is not in the text the engine read (OCR output) nor in what the
+      // user gave us, the two rows are not two readings of the same line — they
+      // are different flights, and "learning" from them rewrites real data.
+      var hay = String(directText || "").toUpperCase() + " " +
+                String(inputText || "").toUpperCase().replace(/\s+/g, " ");
+      if (hay.indexOf(pat) < 0) {
+        diffNotes.push("  (not learned: " + pat + " is not in the source text, so it is a parse artefact)");
+        continue;
+      }
+      if (teachRule({ type: "flight_num", pattern: pat, replacement: rep,
+                      why: "AI corrected flight number glyph error",
+                      evidence: 1, seen: new Date().toISOString().slice(0, 10) }) === "taught") taught++;
+    }
+    if (d.date !== aiRow.date) diffNotes.push("Flight " + (i + 1) + " date: " + d.date + " vs " + aiRow.date);
+    if (d.orig !== aiRow.orig || d.dest !== aiRow.dest) {
+      diffNotes.push("Flight " + (i + 1) + " route: " + d.orig + "-" + d.dest + " vs " + aiRow.orig + "-" + aiRow.dest);
+    }
+    if (clockCore(d.dep) !== clockCore(aiRow.dep) || clockCore(d.arr) !== clockCore(aiRow.arr)) {
+      diffNotes.push("Flight " + (i + 1) + " times: " + d.dep + "/" + d.arr + " vs " + aiRow.dep + "/" + aiRow.arr);
+    }
+  }
+
+  if (diffNotes.length > 0 || !directText.trim()) {
+    var entry = {
+      id: "mstk_" + Date.now(),
+      when: new Date().toISOString().slice(0, 19).replace("T", " "),
+      reason: reason || "AI correction",
+      summary: diffNotes.slice(0, 14).join("; ") || "Direct parse missed flight data",
+      rules: (taught ? "taught " + taught : "") + (skipped ? (taught ? ", " : "") + skipped + " comparison(s) refused (unpaired/ambiguous)" : ""),
+      input: (inputText || "").slice(0, 180),
+      direct: (directText || "").slice(0, 200),
+      ai: (aiText || "").slice(0, 200)
+    };
+    recordMistake(entry);
+  }
+}
+
+/* LEARNER:END */
+/* ---------- caches ---------- */
+var LKEY = "spicy_learn_v1";
+function learnAll() { try { return JSON.parse(localStorage.getItem(LKEY) || "[]"); } catch (e) { return []; } }
+function learnRecord(text, aiOut, reason) {
+  var all = learnAll();
+  all.unshift({ fp: fp(text), when: new Date().toISOString().slice(0, 10),
+                why: reason, in: (text || "").slice(0, 160), out: (aiOut || "").slice(0, 200) });
+  try { localStorage.setItem(LKEY, JSON.stringify(all.slice(0, 40))); } catch (e) {}
+}
+function learnKnows(text) {
+  var f = fp(text), all = learnAll();
+  for (var i = 0; i < all.length; i++) if (all[i].fp === f) return all[i];
+  return null;
+}
+
+var TCACHE_KEY = "spicy_text_cache_v2";
+function tCacheAll(){ try{ return JSON.parse(localStorage.getItem(TCACHE_KEY)||"{}"); }catch(e){return{};} }
+function tCacheGet(h){ var c=tCacheAll(); return c[h]||null; }
+function tCacheSet(h, outText){
+  try{
+    var c=tCacheAll();
+    c[h]={out: outText.slice(0,3000), when: Date.now()};
+    var keys=Object.keys(c).sort(function(a,b){return c[b].when-c[a].when;});
+    var nc={}; for(var i=0;i<Math.min(80,keys.length);i++) nc[keys[i]]=c[keys[i]];
+    localStorage.setItem(TCACHE_KEY, JSON.stringify(nc));
+  }catch(e){}
+}
+
+var ICACHE_KEY = "spicy_img_cache_v2";
+function imgCacheAll(){ try{ return JSON.parse(localStorage.getItem(ICACHE_KEY)||"{}"); }catch(e){return{};} }
+function imgCacheGet(hash){ var c=imgCacheAll(); return c[hash]||null; }
+function imgCacheSet(hash, outText){
+  try{
+    var c=imgCacheAll();
+    c[hash]={out: outText.slice(0,3000), when: Date.now()};
+    var keys=Object.keys(c).sort(function(a,b){return c[b].when-c[a].when;});
+    var nc={}; for(var i=0;i<Math.min(30,keys.length);i++) nc[keys[i]]=c[keys[i]];
+    localStorage.setItem(ICACHE_KEY, JSON.stringify(nc));
+  }catch(e){}
+}
+
+/* ---------- pre-warm engine ---------- */
+(function prewarm(){
+  try{
+    if(window.SpicyEngine) window.SpicyEngine.parse("AA 100 01JAN JFK LHR 100P 200P Y 738 N");
+  }catch(e){}
+})();
+
+/* ---------- aviation-specific OCR text cleaner & repair ---------- */
+// These expensive regexes used to be rebuilt on every call (and every
+// keystroke / OCR pass). Build them once at startup.
+var _cleanAirlines = [];
+var _cleanAirLeadRe = null, _cleanCaseAirRe = null, _cleanAirRe = null;
+/* All known airport codes, packed into one "|AAA|BBB|" haystack.  A digits +
+   three-letters token is only worth un-gluing when the letters are a real
+   airport: `114JFK` is a flight and its airport, `15SEP` is a date. */
+var _cleanAirportCodes = "";
+/* Carrier codes that are also ordinary English words.  The case-repair pass
+   uppercases every standalone token that matches a carrier, which silently
+   rewrites prose — "(JFK) to Dublin (DUB)" became "(JFK) TO Dublin (DUB)" and
+   the engine lost the route header.  These words are only uppercased when they
+   sit directly in front of a flight number.  Listing words that are not (yet)
+   codes costs nothing: the map is only consulted for a token that already
+   matched a carrier. */
+var _CLEAN_WORD_CODES = {};
+["to", "by", "at", "as", "be", "me", "de", "la", "ha", "oz", "is", "in", "it",
+ "of", "or", "we", "so", "no", "us", "do", "if", "on", "an"].forEach(function(w) {
+  _CLEAN_WORD_CODES[w] = 1;
+});
+function _ensureCleanAirRegexes() {
+  if (_cleanAirLeadRe || !_cleanAirlines.length) return;
+  var alt = _cleanAirlines.map(function(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }).join("|");
+  if (!alt) return;
+  _cleanAirLeadRe = new RegExp("\\b(" + alt + ")\\s+[_|Il]([0-9A-Za-z]{2,5})\\b", "gi");
+  _cleanCaseAirRe = new RegExp("\\b(" + alt + ")\\b", "gi");
+  _cleanAirRe = new RegExp("\\b(" + alt + ")[ \\t]+([0-9A-Za-z]{1,5})\\b", "g");
+}
+(function() {
+  try {
+    var d = window.SPICY_DATA || SPICY_DATA;
+    if (d && d.airlines) _cleanAirlines = Object.keys(d.airlines);
+    if (d && d.airports) {
+      var codes = Object.keys(d.airports);
+      _cleanAirportCodes = "|" + codes.join("|") + "|";
+    }
+  } catch (e) {}
+  _ensureCleanAirRegexes();
+})();
+var _cleanMonthRes = [];
+(function() {
+  var months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  months.forEach(function(m) {
+    // `15 SEP` / `15Sep2026` -> `15 SEP`.  A glued `15SEP` is already exactly
+    // the form the GDS row parser wants, so only split when digits follow.
+    _cleanMonthRes.push([new RegExp("(\\d{1,2})\\s*([A-Za-z]{3})(\\d*)", "gi"), function(_, d, mon, tail) {
+      if (mon.toUpperCase() !== m) return _;
+      return tail ? d + " " + m + " " + tail : d + m;
+    }]);
+    _cleanMonthRes.push([new RegExp(m + "\\s*(\\d{1,2})", "gi"), m + " $1"]);
+  });
+})();
+
+var _GDS_MONTHS = { JAN:1, FEB:1, MAR:1, APR:1, MAY:1, JUN:1, JUL:1, AUG:1,
+  SEP:1, OCT:1, NOV:1, DEC:1 };
+
+function cleanOcrText(rawText, opts) {
+  if (!rawText) return "";
+  var s = String(rawText);
+  var applyLearned = !(opts && opts.learned === false);
+
+  // 1. Apply self-healed rules first.
+  //
+  // Rules are learned from screenshots (the AI only ever corrects an OCR
+  // misread), so they are applied to OCR text only.  A typed or pasted itinerary
+  // is ground truth: rewriting `AV 126` -> `AV 127` there would replace a real
+  // flight with a different one, and a learned rule has no business doing that
+  // to text the user handed us by hand.
+  if (applyLearned) {
+    var rules = loadLearnedRules();
+    if (rules && rules.length) {
+      rules.forEach(function(r) {
+        if (r.pattern && r.replacement !== undefined) {
+          s = s.split(r.pattern).join(r.replacement);
+        }
+      });
+    }
+  }
+
+  // 2. Line breaks and separators
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/[•·—–]/g, " - ");
+  s = s.replace(/[-–—]/g, " - ");
+  s = s.replace(/[ \t]{2,}/g, " ");
+  // The dash pass above also splits a GDS previous-day marker ("140P-1" and
+  // its "+1"/"¥1" cousins). Put them back — the engine treats those as day
+  // shifts on the arrival time.
+  s = s.replace(/(\d{1,2})\s*([APNM])(\s*[\+¥‡])? - (\d)\b/gi, "$1$2$3-$4");
+
+  // Glued airports e.g. DOHtoCAI -> DOH to CAI, JFK-LHR -> JFK - LHR
+  s = s.replace(/\b([A-Za-z]{3})\s*to\s*([A-Za-z]{3})\b/gi, "$1 to $2");
+  s = s.replace(/\b([A-Za-z]{3})to([A-Za-z]{3})\b/gi, "$1 to $2");
+
+  // Underscore and glyph airport repairs – expanded from weekly report failure (ET ORD-ADD-CAI)
+  s = s.replace(/_F[KC]\b/g, "JFK");
+  s = s.replace(/\b[lI1]FK\b/g, "JFK");
+  s = s.replace(/\bCAl\b/g, "CAI");
+  s = s.replace(/\bCA1\b/g, "CAI");
+  s = s.replace(/\bLNR\b/g, "LHR");
+  s = s.replace(/\bIHR\b/g, "LHR");
+  s = s.replace(/\b0RD\b/g, "ORD");
+  s = s.replace(/\bA0D\b/g, "ADD");
+  s = s.replace(/\bAD0\b/g, "ADD");
+  s = s.replace(/\bSlN\b/g, "SIN");
+  s = s.replace(/\blST\b/g, "IST");
+  s = s.replace(/\bLAx\b/g, "LAX");
+
+  // 3. Day shifts: 12h, 24h, compact, and parenthesized
+  s = s.replace(/(\d{1,2}[:._]\d{2})\s*\+\s*[lIi1tT]\b/gi, "$1+1");
+  s = s.replace(/(\d{1,2}[:._]\d{2})\s*\+\s*[zZ2]\b/gi, "$1+2");
+  s = s.replace(/\b(AM|PM|[APNM])\s*\+\s*[lIi1tT]\b/gi, "$1+1");
+  s = s.replace(/\b(AM|PM|[APNM])\s*\+\s*[zZ2]\b/gi, "$1+2");
+  s = s.replace(/\b(AM|PM|[APNM])\s*\+\s*[sS5]\b/gi, "$1+5");
+  s = s.replace(/\(\s*\+\s*[lIi1tT]\s*(?:day)?\s*\)/gi, "(+1)");
+  s = s.replace(/\(\s*\+\s*[zZ2]\s*(?:days?)?\s*\)/gi, "(+2)");
+  s = s.replace(/¥\s*[lIi1tT]/g, "¥1");
+  s = s.replace(/¥\s*[zZ2]/g, "¥2");
+  // GDS overnight markers OCR mangled on the clock: "140P+_" / "910P¥l"
+  s = s.replace(/\b(\d{1,2})\s*([APNM])(\s*[\+¥‡]\s*)([_|lIi1tT])\b/gi, "$1$2$31");
+  s = s.replace(/\b(\d{1,2})\s*([APNM])(\s*[\+¥‡]\s*)([zZ2])\b/gi, "$1$2$32");
+  s = s.replace(/\b(\d{1,2})\s*([APNM])(\s*[\+¥‡]\s*)([sS5])\b/gi, "$1$2$35");
+  s = s.replace(/\b(AM|PM|[APNM])\s*-\s*([1-3lItT])(?![0-9A-Za-z]*[:\.\/])/gi, function(_, ap, shift) {
+    return ap + "-" + (shift === "l" || shift === "I" || shift === "t" ? "1" : shift);
+  });
+
+  // Airline typos & OCR confusions
+  s = s.replace(/Brltlsh\s+Alrways/gi, "British Airways");
+  s = s.replace(/Brltlsh/gi, "British");
+  s = s.replace(/Emirales/gi, "Emirates");
+  s = s.replace(/Uniled/gi, "United");
+  s = s.replace(/Delia/gi, "Delta");
+  s = s.replace(/Amerlcan/gi, "American");
+  s = s.replace(/Lufihansa/gi, "Lufthansa");
+  s = s.replace(/Qaiar/gi, "Qatar");
+  s = s.replace(/Turklsh/gi, "Turkish");
+  s = s.replace(/Slngapore/gi, "Singapore");
+
+  // Airline + Flight prefix handling: e.g. "BA · Flight 114" -> "BA 114", "Flight AA 123" -> "AA 123"
+  s = s.replace(/\b([A-Z0-9]{2})\s*[-·•.]*\s*Flight\s*([0-9A-Za-z]{1,5})\b/gi, "$1 $2");
+  s = s.replace(/\bFlight\s+([A-Za-z]{2}|[0-9][A-Za-z]|[A-Za-z][0-9])[ \t]+([0-9A-Za-z]{1,5})\b/gi, "$1 $2");
+  s = s.replace(/\bFlight\s+([0-9A-Za-z]{1,5})\b/gi, "$1");
+
+  // Full month names to 3-letter month (e.g. September -> SEP)
+  var monthMap = {
+    january:"JAN", february:"FEB", march:"MAR", april:"APR", may:"MAY", june:"JUN",
+    july:"JUL", august:"AUG", september:"SEP", october:"OCT", november:"NOV", december:"DEC"
+  };
+  Object.keys(monthMap).forEach(function(m) {
+    s = s.replace(new RegExp("\\b" + m + "\\b", "gi"), monthMap[m]);
+  });
+
+  // Day number OCR repairs before/after month (e.g. l Sep -> 1 Sep, ls Sep -> 15 Sep, lo -> 10)
+  // ET image test showed OCRAD reading 1 as l, 15 as ls, 10 as lo, 31 as 3l etc
+  s = s.replace(/\b[lI]\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b/gi, "1 $1");
+  s = s.replace(/\b[lI]s\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b/gi, "15 $1");
+  s = s.replace(/\b[lI][oO]\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b/gi, "10 $1");
+  s = s.replace(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+[lI]\b/gi, "$1 1");
+  s = s.replace(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+[lI]s\b/gi, "$1 15");
+  s = s.replace(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+[lI][oO]\b/gi, "$1 10");
+  // 31 often read as 3l
+  s = s.replace(/\b3[lI]\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b/gi, "31 $1");
+  s = s.replace(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+3[lI]\b/gi, "$1 31");
+
+
+  // 4. Durations: e.g. 10 hr4O min, 2h 3Om, 4 hr 30 min (must not match GDS booking class / dates / airports)
+  s = s.replace(/\b([0-9]{1,2})\s*h(?:r|ours?)?[ \t]*([0-9oOsSlIzZ]{1,2})\s*(?:m|min|minutes?)\b/gi, function(_, h, m) {
+    var cm = m.replace(/[oO]/g, "0").replace(/[sS]/g, "5").replace(/[lIi]/g, "1").replace(/[zZ]/g, "2");
+    return h + " hr " + cm + " min";
+  });
+
+  // 5. Common aviation word & aircraft typos
+  var dictWords = [
+    [/Boelng/gi, "Boeing"],
+    [/Alrbus/gi, "Airbus"],
+    [/Alrlines?/gi, "Airlines"],
+    [/Alrways?/gi, "Airways"],
+    [/Buslness/gi, "Business"],
+    [/Etonomy/gi, "Economy"],
+    [/Econorny/gi, "Economy"],
+    [/Premtum/gi, "Premium"],
+    [/Nonstop/gi, "Nonstop"],
+    [/Fl[il1]ght/gi, "Flight"],
+    [/<ABIN/gi, "CABIN"],
+    [/E<ONOMY/gi, "ECONOMY"],
+    [/Operated\s+by/gi, "Operated by"],
+    [/Departs?/gi, "Departs"],
+    [/Arr[il1]ves?/gi, "Arrives"],
+    [/Term[il1]nal/gi, "Terminal"],
+    [/lberia/gi, "Iberia"],
+    [/\b([Tt])(\d)([Tt])\b/g, "7$27"],
+    [/Boeing\s+TTT/gi, "Boeing 777"],
+    [/\bA3[sS]0\b/gi, "A350"],
+    [/\bA38[oO]\b/gi, "A380"],
+    [/\bA32[oO]\b/gi, "A320"],
+    [/(?<![:\d])([0-2]?[1-9]|[123]0|31)[ \t]*([Nn]ou)\b/gi, "$1 NOV"],
+    [/\b([Nn]ou)[ \t]+([0-2]?[1-9]|[123]0|31)\b(?![:\.\d])/gi, "NOV $2"],
+    [/(?<![:\d])([0-2]?[1-9]|[123]0|31)[ \t]*([Aa]uq)\b/gi, "$1 AUG"],
+    [/\b([Aa]uq)[ \t]+([0-2]?[1-9]|[123]0|31)\b(?![:\.\d])/gi, "AUG $2"],
+    [/(?<![:\d])([0-2]?[1-9]|[123]0|31)[ \t]*([Ff]eh)\b/gi, "$1 FEB"],
+    [/\b([Ff]eh)[ \t]+([0-2]?[1-9]|[123]0|31)\b(?![:\.\d])/gi, "FEB $2"],
+    [/(?<![:\d])([0-2]?[1-9]|[123]0|31)[ \t]*([Dd]et)\b/gi, "$1 DEC"],
+    [/\b([Dd]et)[ \t]+([0-2]?[1-9]|[123]0|31)\b(?![:\.\d])/gi, "DEC $2"]
+  ];
+  dictWords.forEach(function(pair) { s = s.replace(pair[0], pair[1]); });
+
+  // 6. Times with colons (both 12h with AM/PM and 24h clocks): e.g. 7:ss PM, ll:39, T:SS PM, 12:4s PM
+  // The `(?!\s*\d)` tail keeps a GDS flight-time column (`77W  6.10  2699`) out
+  // of the clock repair: a duration is not a time, and rewriting 6.10 as 6:10
+  // made the engine re-derive the leg's duration from the clocks instead.
+  s = s.replace(/\b([0-9A-Za-z]{1,2})[:\.](\w{2})(?:\s*([AP]M?|[ap]m?))?\b(?!\s*\d)/g, function(match, h, m, ap) {
+    var ch = h.replace(/[lIi]/g, "1").replace(/[oO]/g, "0").replace(/[Tt]/g, "7").replace(/[zZ]/g, "2").replace(/[sS]/g, "5");
+    var cm = m.replace(/ss/gi, "55")
+              .replace(/zs/gi, "25")
+              .replace(/so/gi, "50")
+              .replace(/os/gi, "05")
+              .replace(/ll/gi, "11")
+              .replace(/lo/gi, "10")
+              .replace(/oo/gi, "00")
+              .replace(/[sS]/g, "5")
+              .replace(/[oO]/g, "0")
+              .replace(/[lIi]/g, "1")
+              .replace(/[zZ]/g, "2")
+              .replace(/[tT]/g, "7");
+    var hNum = parseInt(ch, 10), mNum = parseInt(cm, 10);
+    if (hNum > 23 || mNum > 59) return match;
+    return ch + ":" + cm + (ap ? " " + ap.toUpperCase() : "");
+  });
+
+  // 7. Compact GDS clocks: 9s0P, 94SA, 1120A, etc.
+  s = s.replace(/\b(\d{1,2})([sSoO0-9]{2})([APNM])\b/g, function(_, h, m, ap) {
+    var cm = m.replace(/[sS]/g, "5").replace(/[oO]/g, "0");
+    return h + cm + ap;
+  });
+
+  // Route-specific airline OCR confusion (e.g. QR read as OR when DOH is present, ET read as E7 etc)
+  if (/DOH/i.test(s)) {
+    s = s.replace(/\bOR\s+/gi, "QR ");
+  }
+  // Ethiopian ET – OCR often reads ET as E7 or E7, and ADD as A0D
+  if (/ADD/i.test(s) || /BOLE/i.test(s)) {
+    s = s.replace(/\bE7\s+/gi, "ET ");
+    s = s.replace(/\bE\s*7\s+/gi, "ET ");
+  }
+
+  // 8. Glued flight numbers + airport: e.g. 114lFK -> 114 JFK, ZO4lFK -> 204 JFK
+  //
+  // Two guards, both from real misparses in the weekly report: a trailing
+  // letters group is only an airport when the data file knows it (so the date
+  // `15SEP` keeps its glue), and `155P TK2` must not be re-flowed into a
+  // phantom `TK 2` leg by the same split — the engine reads sell-status tokens
+  // itself.
+  s = s.replace(/\b([0-9A-Za-z]{1,4})[lI1]FK\b/gi, "$1 JFK");
+  s = s.replace(/\b([0-9]{1,4})([A-Z]{3})\b/g, function(match, num, letters) {
+    if (_GDS_MONTHS[letters]) return match;
+    if (_cleanAirportCodes.length && _cleanAirportCodes.indexOf("|" + letters + "|") < 0) return match;
+    return num + " " + letters;
+  });
+
+  // 9. Airline code + Flight number:
+  // e.g. "IB 4z37", "QR los9", "BA ll4", "LH 4OO", "DL 001"
+  if (_cleanAirlines.length) {
+    _ensureCleanAirRegexes();
+    // OCR often returns a valid carrier in the wrong case (qR) and turns the
+    // leading 1 of a flight number into an underscore or vertical bar
+    // (qR _os9). Repair only the token immediately after a known carrier.
+    if (_cleanAirLeadRe) {
+      _cleanAirLeadRe.lastIndex = 0;
+      s = s.replace(_cleanAirLeadRe, function(match, code, num, offset) {
+        // English words that are also carrier codes (TO Transavia, BY TUI…)
+        // must not eat the next word.  The `i` flag makes [_|Il] match a
+        // capital L, so "to London" / "to Los Angeles" became "TO 10nd0n" /
+        // "TO 105" — phantom Transavia flights on every Google-Flights paste
+        // whose city starts with L.
+        if (_CLEAN_WORD_CODES[code.toLowerCase()]) return match;
+        var repaired = num.replace(/[oO]/g, "0").replace(/[sS]/g, "5")
+          .replace(/[lIi|]/g, "1").replace(/[zZ]/g, "2").replace(/[gq]/g, "9");
+        // A purely numeric token is a complete flight number: `AC 918` is not
+        // "AC 1918".  The leading-1 restore only applies when the token had
+        // letters in it, i.e. an OCR'd `l05` for `105`.
+        if (!/^\d+$/.test(num) && !/^1/.test(repaired)) repaired = "1" + repaired;
+        // A city/word (ondon, os) is not a flight number.  The OCR repair is
+        // for tokens that become digits ("_os9" -> 1059).
+        if (!/^\d{2,5}$/.test(repaired)) return match;
+        return code.toUpperCase() + " " + repaired;
+      });
+    }
+    if (_cleanCaseAirRe) {
+      _cleanCaseAirRe.lastIndex = 0;
+      s = s.replace(_cleanCaseAirRe, function(_, code, offset) {
+        // Some carrier codes are ordinary English words (TO Transavia, BY TUI,
+        // AT, AS, BE, ME, DE, LA, HA, OZ).  Uppercasing them rewrote the very
+        // lines the parser reads routes from — "(JFK) to Dublin (DUB)" became
+        // "(JFK) TO Dublin (DUB)" — so only repair a lowercase word when it is
+        // actually sitting in front of a flight number.
+        if (_CLEAN_WORD_CODES[code.toLowerCase()]) {
+          var after = s.slice(offset + code.length, offset + code.length + 8);
+          if (!/^[ \t]*\d{1,4}(?![\d:.])/.test(after)) return code;
+        }
+        return code.toUpperCase();
+      });
+    }
+    if (_cleanAirRe) {
+      _cleanAirRe.lastIndex = 0;
+      s = s.replace(_cleanAirRe, function(match, code, num, offset) {
+      if (/^(AM|PM)$/i.test(code)) {
+        var before = s.slice(Math.max(0, offset - 8), offset);
+        if (/\d\s*$/i.test(before)) return match;
+      }
+      // Same word-code guard as the lead pass: "TO Los" is a route, not
+      // Transavia flight 105 (L->1, o->0, s->5).
+      if (_CLEAN_WORD_CODES[code.toLowerCase()] && !/\d/.test(num)) return match;
+      if (!/[0-9]/.test(num) && !/^[loszbBtT]+$/i.test(num)) return match;
+      var cnum = num.replace(/[oO]/g, "0")
+                    .replace(/[lIi]/g, "1")
+                    .replace(/[zZ]/g, "2")
+                    .replace(/[sS]/g, "5")
+                    .replace(/[b]/g, "6")
+                    .replace(/[B]/g, "8")
+                    .replace(/[gq]/g, "9")
+                    .replace(/[tT]/g, "7");
+      return code + " " + cnum;
+      });
+    }
+  }
+
+  // 9a. Corrupted months sitting next to a day ("31 AUC" -> "31 AUG").
+  // The GDS line parser repairs these as well; this catches prose pastes.
+  var _monthOcr = {AUC:"AUG",AUQ:"AUG",AU6:"AUG","4UG":"AUG","4UC":"AUG",J4N:"JAN",J0N:"JAN",J1N:"JAN",
+    F0B:"FEB",F3B:"FEB",F08:"FEB",F38:"FEB",M4R:"MAR",M48:"MAR","4PR":"APR","4P8":"APR",M4Y:"MAY",
+    J6N:"JUN",J0L:"JUL",J4L:"JUL",J01:"JUL",SE0:"SEP",SE6:"SEP",S3P:"SEP",SEB:"SEP",
+    "0C7":"OCT","0CT":"OCT",N0V:"NOV",N08:"NOV",NQV:"NOV",D0C:"DEC",D06:"DEC",D3C:"DEC",D00:"DEC"};
+  s = s.replace(/\b(\d{1,2})\s+([A-Z0-9]{3})\b/g, function(_, d, m) { var f = _monthOcr[m.toUpperCase()]; return f ? d + " " + f : _; });
+  s = s.replace(/\b([A-Z0-9]{3})\s+(\d{1,2})\b/g, function(_, m, d) { var f = _monthOcr[m.toUpperCase()]; return f ? f + " " + d : _; });
+
+  // 9. Dates: "16 sep", "18nov", etc.
+  for (var mi = 0; mi < _cleanMonthRes.length; mi++) {
+    var _mr = _cleanMonthRes[mi];
+    _mr[0].lastIndex = 0;
+    s = s.replace(_mr[0], _mr[1]);
+  }
+
+  return s;
+}
+
+/* ---------- bounded, non-blocking screenshot OCR ---------- */
+// OCRAD is reliable but can become very expensive on a full-resolution phone
+// screenshot. Keep every pass inside a predictable pixel/time budget and run
+// the heavy recognizer off the UI thread whenever the browser supports it.
+// Screenshot handling is tuned for speed first: reduce the amount of pixels
+// OCRAD has to chew on, keep the native/text-detector pause tiny, and prewarm
+// the worker on page idle so a real drop does not start with a 2-second boot.
+var OCR_MAX_PIXELS = 850000;
+var OCR_MAX_SIDE = 1680;
+var OCR_MAX_TOTAL_MS = 2200;
+var OCR_NATIVE_TIMEOUT_MS = 250;
+var OCR_WORKER_BOOT_MS = 1200;
+var OCR_WORKER_PASS_MS = 2200;
+// A healthy direct read answers well inside this window (typical: 300-700ms).
+// Past it, the screenshot is one of the hard cases that would previously end
+// in "undetected attachment" — so the AI fallback starts NOW and overlaps the
+// remaining bounded direct re-reads. First *preferred* winner paints: direct
+// still wins the race whenever it succeeds; AI only answers what direct cannot.
+var AI_SPECULATE_AFTER_MS = 1500;
+var ocrWorkerState = null;
+var ocrWorkerDisabled = false;
+
+function ocrError(code, message) {
+  var err = new Error(message || code || "OCR error");
+  err.code = code || "ocr_error";
+  return err;
+}
+function ocradSourceText() {
+  var sourceNode = $("ocradSource");
+  return sourceNode ? String(sourceNode.textContent || sourceNode.text || "") : "";
+}
+function canUseOcrad() {
+  return typeof window.OCRAD === "function" || !!ocradSourceText();
+}
+function ensureOcradOnMain() {
+  if (typeof window.OCRAD === "function") return true;
+  var source = ocradSourceText();
+  if (!source) return false;
+  try {
+    // `ocradSource` deliberately has type=text/plain so first paint does not
+    // compile a megabyte of OCR code. Only older browsers that cannot use the
+    // worker evaluate it on the main thread, and only when OCR is requested.
+    if (window.eval) window.eval(source);
+    else eval(source); // eslint-disable-line no-eval
+  } catch (e) { return false; }
+  return typeof window.OCRAD === "function";
+}
+// Overlapping horizontal strips for the last-rescan OCR pass. A full
+// phone/desktop screenshot scaled to the pixel budget leaves glyphs
+// too small for OCRAD; re-reading ~45% of the frame height in 3
+// overlapping bands roughly doubles glyph size, and the overlap
+// guarantees a text line is never cut across a band boundary.
+function computeOcrBands(w, h) {
+  if (h < 500) return [];   // small frame: the full-frame passes are enough
+  var bands = [];
+  if (h < 900) {
+    var bh = Math.ceil(h * 0.6);
+    bands.push({ y: 0, h: bh });
+    bands.push({ y: Math.max(0, h - bh), h: bh });
+  } else {
+    var bh2 = Math.ceil(h * 0.45);
+    bands.push({ y: 0, h: bh2 });
+    bands.push({ y: Math.round(h * 0.3), h: bh2 });
+    bands.push({ y: Math.max(0, h - bh2), h: bh2 });
+  }
+  return bands;
+}
+function cropCanvas(src, x, y, w, h) {
+  var y0 = Math.max(0, Math.min(src.height - 1, y));
+  var h0 = Math.min(h, src.height - y0);
+  if (h0 <= 0) return null;
+  var cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h0;
+  var ctx = cv.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, 0, y0, w, h0, 0, 0, w, h0);
+  return cv;
+}
+function fitOcrDimensions(width, height) {
+  var w = Math.max(1, Math.round(width || 1));
+  var h = Math.max(1, Math.round(height || 1));
+  var scale = Math.min(1, OCR_MAX_SIDE / Math.max(w, h), Math.sqrt(OCR_MAX_PIXELS / (w * h)));
+  if (scale < 1) {
+    w = Math.max(1, Math.round(w * scale));
+    h = Math.max(1, Math.round(h * scale));
+  }
+  return { w: w, h: h };
+}
+
+/* ---------- high-speed image preprocessing ---------- */
+function preprocessCanvasForOcr(srcCanvas, mode, thresholdVal) {
+  var w = srcCanvas.width, h = srcCanvas.height;
+  var targetW = w, targetH = h;
+
+  // Glyph height needs to be ~25-35px for clean OCRAD recognition. Upscale
+  // compact flight cards, then cap the final work area so a dense screenshot
+  // cannot turn one attachment into several seconds of synchronous work.
+  if (h < 260) {
+    var smallScale = Math.min(3.0, 480 / h);
+    targetW = Math.round(w * smallScale);
+    targetH = Math.round(h * smallScale);
+  } else if (w < 800) {
+    var narrowScale = Math.min(2.0, 1000 / w);
+    targetW = Math.round(w * narrowScale);
+    targetH = Math.round(h * narrowScale);
+  }
+  var bounded = fitOcrDimensions(targetW, targetH);
+  targetW = bounded.w;
+  targetH = bounded.h;
+
+  var cv = document.createElement("canvas");
+  cv.width = targetW;
+  cv.height = targetH;
+  // willReadFrequently keeps the backing store in CPU memory: getImageData
+  // below is substantially faster than reading back a GPU texture. Browsers
+  // without the option simply ignore it.
+  var ctx = cv.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas is not available");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(srcCanvas, 0, 0, targetW, targetH);
+
+  var imgData = ctx.getImageData(0, 0, targetW, targetH);
+  var data = imgData.data;
+  var len = data.length;
+
+  // One histogram pass determines whether a dark UI should be inverted.
+  var hist = new Uint32Array(256);
+  var minLum = 255, maxLum = 0;
+  for (var i = 0; i < len; i += 4) {
+    var lum = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000 | 0;
+    hist[lum]++;
+    if (lum < minLum) minLum = lum;
+    if (lum > maxLum) maxLum = lum;
+  }
+  var bgLum = 0, maxCount = 0;
+  for (var k = 0; k < 256; k++) {
+    if (hist[k] > maxCount) { maxCount = hist[k]; bgLum = k; }
+  }
+
+  // If mode === "auto", dark background -> invert so text is black on white.
+  var isDark = (mode === "invert") ? true : (mode === "normal") ? false : (bgLum < 128);
+
+  // Otsu binarization threshold from the histogram computed above. Used
+  // when the fixed 150/175 cuts misjudge the image (dim amber terminal
+  // text, heavy JPEG noise). Degenerate histograms fall back to 150.
+  var otsu = 150;
+  if (mode === "otsu") {
+    var totalPx = (len / 4) | 0;
+    var sumAll = 0, oK;
+    for (oK = 0; oK < 256; oK++) sumAll += oK * hist[oK];
+    var wB = 0, sumB = 0, bestVar = -1;
+    for (oK = 0; oK < 256; oK++) {
+      wB += hist[oK];
+      if (!wB) continue;
+      var wF = totalPx - wB;
+      if (!wF) break;
+      sumB += oK * hist[oK];
+      var mB = sumB / wB, mF = (sumAll - sumB) / wF;
+      var between = wB * wF * (mB - mF) * (mB - mF);
+      if (between > bestVar) { bestVar = between; otsu = oK; }
+    }
+    if (otsu < 30 || otsu > 225) otsu = 150;
+  }
+
+  if (mode === "gray") {
+    // Contrast-stretched grayscale (no hard threshold). For an inverted image
+    // the range must be inverted too; otherwise dark screenshots lose detail.
+    var low = isDark ? 255 - maxLum : minLum;
+    var high = isDark ? 255 - minLum : maxLum;
+    var range = Math.max(1, high - low);
+    for (var g = 0; g < len; g += 4) {
+      var gl = (data[g] * 299 + data[g + 1] * 587 + data[g + 2] * 114) / 1000;
+      if (isDark) gl = 255 - gl;
+      var gNorm = Math.max(0, Math.min(255, Math.round(((gl - low) / range) * 255)));
+      data[g] = gNorm; data[g + 1] = gNorm; data[g + 2] = gNorm; data[g + 3] = 255;
+    }
+  } else {
+    // Fuse grayscale, conditional inversion and threshold into one pass.
+    var thresh = (mode === "otsu") ? otsu : (thresholdVal || 150);
+    var invCut = 255 - thresh;
+    for (var p = 0; p < len; p += 4) {
+      var valueLum = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
+      // Fixed cuts keep the historic convention (dark images test against
+      // 255-thresh). The Otsu cut was derived from this image's own two
+      // clusters, so use it directly as the split point: text is the side
+      // away from the background, in either polarity.
+      var value = (mode === "otsu")
+        ? ((isDark ? valueLum < thresh : valueLum > thresh) ? 255 : 0)
+        : ((isDark ? valueLum < invCut : valueLum > thresh) ? 255 : 0);
+      data[p] = value; data[p + 1] = value; data[p + 2] = value; data[p + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return cv;
+}
+
+/* ---------- OCR worker: keep OCRAD from freezing controls ---------- */
+function releaseOcrWorker(state) {
+  if (!state) return;
+  if (state.bootTimer) clearTimeout(state.bootTimer);
+  if (state.active && state.active.timer) clearTimeout(state.active.timer);
+  try { if (state.worker) state.worker.terminate(); } catch (e) {}
+  try {
+    var api = window.URL || window.webkitURL;
+    if (state.url && api && api.revokeObjectURL) api.revokeObjectURL(state.url);
+  } catch (e) {}
+}
+function rejectOcrWorkerJobs(state, err) {
+  if (!state) return;
+  if (state.active) {
+    var active = state.active;
+    state.active = null;
+    if (active.timer) clearTimeout(active.timer);
+    active.reject(err);
+  }
+  while (state.queue && state.queue.length) state.queue.shift().reject(err);
+}
+function stopOcrWorker(code, message, disable) {
+  var state = ocrWorkerState;
+  if (!state) return;
+  ocrWorkerState = null;
+  if (disable) ocrWorkerDisabled = true;
+  var err = ocrError(code, message);
+  releaseOcrWorker(state);
+  rejectOcrWorkerJobs(state, err);
+}
+function cancelOcrWork() {
+  // A new attachment set or a removed screenshot makes *active/queued* OCR
+  // obsolete, so terminate only then. Keep a prewarmed idle worker alive
+  // between attachments; destroying it on a new drop re-introduced the 1-2s
+  // worker boot delay that prewarming was meant to eliminate.
+  var state = ocrWorkerState;
+  if (!state || (!state.active && !state.queue.length)) return;
+  stopOcrWorker("cancelled", "OCR cancelled because attachments changed", false);
+}
+function pumpOcrWorker() {
+  var state = ocrWorkerState;
+  if (!state || !state.ready || state.active || !state.queue.length) return;
+  var job = state.queue.shift();
+  state.active = job;
+  job.timer = setTimeout(function() {
+    if (ocrWorkerState === state && state.active === job) {
+      stopOcrWorker("timeout", "OCR pass took too long — try a tighter screenshot crop", false);
+    }
+  }, OCR_WORKER_PASS_MS);
+  try {
+    var message = { type: "ocr", id: job.id, width: job.width, height: job.height, pixels: job.pixels.buffer };
+    try { state.worker.postMessage(message, [job.pixels.buffer]); }
+    catch (transferError) { state.worker.postMessage(message); }
+  } catch (postError) {
+    stopOcrWorker("unavailable", "OCR worker could not start", true);
+  }
+}
+function makeOcrWorker() {
+  if (ocrWorkerDisabled || ocrWorkerState) return ocrWorkerState;
+  var WorkerCtor = window.Worker || (typeof Worker !== "undefined" ? Worker : null);
+  var BlobCtor = window.Blob || (typeof Blob !== "undefined" ? Blob : null);
+  var urlApi = window.URL || window.webkitURL;
+  var source = ocradSourceText();
+  if (!WorkerCtor || !BlobCtor || !urlApi || !urlApi.createObjectURL || !source) {
+    ocrWorkerDisabled = true;
+    return null;
+  }
+
+  // The already-inlined OCRAD source is reused rather than fetched. That keeps
+  // the single-file/offline build working while moving recognition off-thread.
+  var bridge = "\n;self.onmessage=function(event){var m=event.data||{};if(m.type!==\"ocr\")return;try{var pixels=new Uint8ClampedArray(m.pixels);var text=OCRAD({width:m.width,height:m.height,data:pixels});self.postMessage({id:m.id,text:text||\"\"});}catch(error){self.postMessage({id:m.id,error:String((error&&error.message)||error||\"OCR worker failed\")});}};self.postMessage({type:\"spicy-ocr-ready\"});";
+  var state = { worker: null, url: "", ready: false, queue: [], active: null, nextId: 0, bootTimer: null };
+  try {
+    state.url = urlApi.createObjectURL(new BlobCtor([source, bridge], { type: "application/javascript" }));
+    state.worker = new WorkerCtor(state.url);
+  } catch (e) {
+    releaseOcrWorker(state);
+    ocrWorkerDisabled = true;
+    return null;
+  }
+  ocrWorkerState = state;
+  state.worker.onmessage = function(event) {
+    var msg = event.data || {};
+    if (msg.type === "spicy-ocr-ready") {
+      state.ready = true;
+      if (state.bootTimer) { clearTimeout(state.bootTimer); state.bootTimer = null; }
+      pumpOcrWorker();
+      return;
+    }
+    var job = state.active;
+    if (!job || msg.id !== job.id) return;
+    state.active = null;
+    if (job.timer) clearTimeout(job.timer);
+    if (msg.error) job.reject(ocrError("failed", msg.error));
+    else job.resolve(String(msg.text || ""));
+    pumpOcrWorker();
+  };
+  state.worker.onerror = function() { stopOcrWorker("unavailable", "OCR worker is unavailable in this browser", true); };
+  state.worker.onmessageerror = function() { stopOcrWorker("unavailable", "OCR worker returned an unreadable response", true); };
+  state.bootTimer = setTimeout(function() {
+    if (ocrWorkerState === state && !state.ready) stopOcrWorker("unavailable", "OCR worker did not start", true);
+  }, OCR_WORKER_BOOT_MS);
+  return state;
+}
+function queueOcrWorker(canvas) {
+  var state = makeOcrWorker();
+  if (!state) return null;
+  var ctx, frame;
+  try {
+    ctx = canvas && canvas.getContext && canvas.getContext("2d", { willReadFrequently: true });
+    frame = ctx && ctx.getImageData(0, 0, canvas.width, canvas.height);
+  } catch (e) { return null; }
+  if (!frame || !frame.data || !frame.data.buffer) return null;
+  return new Promise(function(resolve, reject) {
+    state.queue.push({ id: ++state.nextId, width: frame.width || canvas.width, height: frame.height || canvas.height,
+      pixels: frame.data, resolve: resolve, reject: reject, timer: null });
+    pumpOcrWorker();
+  });
+}
+function runOcradOnMain(canvas) {
+  // Yield once before the compatibility path, allowing the PARSING state to
+  // paint even in browsers that disallow blob workers.
+  return new Promise(function(resolve, reject) {
+    setTimeout(function() {
+      try {
+        if (!ensureOcradOnMain()) throw new Error("OCR engine not available");
+        resolve(window.OCRAD(canvas) || "");
+      } catch (e) { reject(e); }
+    }, 0);
+  });
+}
+function recognizeOcrCanvas(canvas) {
+  var workerTask = queueOcrWorker(canvas);
+  if (!workerTask) return runOcradOnMain(canvas);
+  return workerTask.then(function(text) { return text; }, function(err) {
+    // A blocked/unsupported worker should not make screenshots fail. Fall back
+    // to the bundled OCRAD path; timeout/cancel errors remain bounded instead.
+    if (err && err.code === "unavailable") return runOcradOnMain(canvas);
+    throw err;
+  });
+}
+function prewarmOcrWorker(ms) {
+  // Spawn the OCR worker during page idle instead of waiting until the first
+  // screenshot. The worker compiles the bundled OCRAD engine off-thread, so
+  // assembling it now removes the biggest single delay from a real drop.
+  if (ocrWorkerState || ocrWorkerDisabled) return;
+  setTimeout(function() {
+    try { makeOcrWorker(); } catch (e) {}
+  }, ms || 400);
+}
+
+/* ---------- instant image parsing engine ---------- */
+function parseImageDirect(im) {
+  return new Promise(function(resolve) {
+    var t0 = nowMs();
+    var settled = false;
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    }
+    function elapsed() { return Math.round(nowMs() - t0); }
+
+    function begin(srcCv) {
+      if (!srcCv || !srcCv.width || !srcCv.height) {
+        finish({ segs: [], warns: ["Image has no readable pixels"], text: "", method: "none", dur: 0 });
+        return;
+      }
+
+      function runOcradPasses() {
+        // With an OCR worker, OCRAD stays uncompiled on the UI thread until it
+        // is actually needed as a compatibility fallback.
+        if (!canUseOcrad()) {
+          finish({ segs: [], warns: ["OCR engine not available"], text: "", method: "none", dur: elapsed() });
+          return;
+        }
+
+        // A normal screenshot is found on the first pass. Three carefully
+        // chosen variants retain a useful fallback without the old six-pass
+        // worst case; large frames get just two bounded attempts.
+        var passes = [
+          { mode: "auto", thresh: 150, label: "auto (150)" },
+          { mode: "auto", thresh: 175, label: "auto (175)" },
+          { mode: "gray", thresh: 0, label: "grayscale" }
+        ];
+        if (srcCv.width * srcCv.height > 850000) passes = passes.slice(0, 2);
+        var bestRaw = "";
+        var pIdx = 0;
+        // Rescue budget: the normal passes get OCR_MAX_TOTAL_MS; once
+        // they fail we spend one generous extra window on an Otsu pass
+        // and overlapping bands before admitting defeat (and falling
+        // back to the much slower AI call).
+        var RESCUE_TOTAL_MS = 12000;
+        var rescueStarted = false;
+
+        function startRescue(reason) {
+          if (settled || rescueStarted) return;
+          rescueStarted = true;
+          setStatus("PARSING (detailed re-read)…");
+          var texts = [];
+          var steps = [];
+          function ocrStep(makeCv) {
+            return function(done) {
+              if (settled) return;
+              var cv;
+              try { cv = makeCv(); } catch (e) { return done("", "failed"); }
+              if (!cv) return done("", "failed");
+              recognizeOcrCanvas(cv).then(function(raw) { done(String(raw || "")); },
+                function(err) { done("", err && err.code); });
+            };
+          }
+          steps.push(ocrStep(function() { return preprocessCanvasForOcr(srcCv, "otsu", 0); }));
+          computeOcrBands(srcCv.width, srcCv.height).forEach(function(b) {
+            steps.push(ocrStep(function() {
+              var band = cropCanvas(srcCv, 0, b.y, srcCv.width, b.h);
+              if (!band) return null;
+              return preprocessCanvasForOcr(band, "otsu", 0);
+            }));
+          });
+          function finalizeRescue() {
+            var lines = [], seen = {};
+            texts.forEach(function(t) {
+              t.split("\n").forEach(function(l) {
+                var k = l.trim();
+                if (k.length > 2 && !seen[k]) { seen[k] = 1; lines.push(l); }
+              });
+            });
+            var merged = lines.join("\n");
+            if (merged.trim().length > bestRaw.trim().length) bestRaw = merged;
+            if (merged.trim().length > 5) {
+              var cleanedRes = cleanOcrText(merged);
+              var resRes = window.SpicyEngine.parse(cleanedRes);
+              if (resRes[0] && resRes[0].length > 0) {
+                finish({ segs: resRes[0], warns: resRes[1], text: cleanedRes,
+                  rawOcr: merged, method: "OCRAD (detailed re-read)", dur: elapsed() });
+                return;
+              }
+            }
+            finishBest(reason);
+          }
+          var sIdx = 0;
+          function stepRescue() {
+            if (settled) return;
+            if (aiSpeculationPainted()) {
+              finish({ segs: [], warns: ["skipped — AI answered first"], text: bestRaw, method: "OCRAD (skipped)", dur: elapsed() });
+              return;
+            }
+            if (sIdx >= steps.length || elapsed() >= OCR_MAX_TOTAL_MS + RESCUE_TOTAL_MS) {
+              finalizeRescue();
+              return;
+            }
+            steps[sIdx++](function(raw, errCode) {
+              if (errCode === "cancelled") {
+                finish({ segs: [], warns: ["OCR cancelled"], text: bestRaw,
+                  method: "OCRAD (cancelled)", dur: elapsed() });
+                return;
+              }
+              if (raw && raw.trim()) texts.push(raw);
+              setTimeout(stepRescue, 0);
+            });
+          }
+          stepRescue();
+        }
+
+        function finishBest(reason) {
+          if (bestRaw.trim().length > 5) {
+            var cleanedFinal = cleanOcrText(bestRaw);
+            var resFinal = window.SpicyEngine.parse(cleanedFinal);
+            if (resFinal[0] && resFinal[0].length > 0) {
+              finish({ segs: resFinal[0], warns: resFinal[1], text: cleanedFinal,
+                rawOcr: bestRaw, method: "OCRAD (best text)", dur: elapsed() });
+              return;
+            }
+          }
+          finish({ segs: [], warns: [reason || "Could not detect flights"], text: bestRaw,
+            method: "OCRAD (failed)", dur: elapsed() });
+        }
+        function step() {
+          if (settled) return;
+          // A speculative AI reply already answered this batch: stop the now
+          // pointless local grinding (bounded by the current pass) instead of
+          // burning the full rescue budget on a result nobody will display.
+          if (aiSpeculationPainted()) {
+            finish({ segs: [], warns: ["skipped — AI answered first"], text: bestRaw, method: "OCRAD (skipped)", dur: elapsed() });
+            return;
+          }
+          if (pIdx >= passes.length) { startRescue(); return; }
+          if (elapsed() >= OCR_MAX_TOTAL_MS) {
+            startRescue("OCR stopped after " + Math.round(OCR_MAX_TOTAL_MS / 1000) + "s — try a tighter screenshot crop");
+            return;
+          }
+          var cfg = passes[pIdx++], procCv;
+          try { procCv = preprocessCanvasForOcr(srcCv, cfg.mode, cfg.thresh); }
+          catch (passErr) { setTimeout(step, 0); return; }
+          recognizeOcrCanvas(procCv).then(function(raw) {
+            if (settled) return;
+            raw = String(raw || "");
+            if (raw.trim().length > bestRaw.trim().length) bestRaw = raw;
+            if (raw.trim().length > 5) {
+              var cleaned = cleanOcrText(raw);
+              var res = window.SpicyEngine.parse(cleaned);
+              if (res[0] && res[0].length > 0) {
+                finish({ segs: res[0], warns: res[1], text: cleaned, rawOcr: raw,
+                  method: "OCRAD (" + cfg.label + ")", dur: elapsed() });
+                return;
+              }
+            }
+            // Yield between passes so UI events and attachment removal remain
+            // responsive even when the browser has no Worker support.
+            setTimeout(step, 0);
+          }, function(err) {
+            if (settled) return;
+            if (err && err.code === "cancelled") {
+              finish({ segs: [], warns: ["OCR cancelled"], text: bestRaw, method: "OCRAD (cancelled)", dur: elapsed() });
+              return;
+            }
+            if (err && err.code === "timeout") {
+              startRescue("OCR timed out — try a tighter screenshot crop");
+              return;
+            }
+            setTimeout(step, 0);
+          });
+        }
+        step();
+      }
+
+      // Native TextDetector is the quickest route when present, but some
+      // browser implementations can stall. Race it against a short deadline
+      // so it never leaves the attachment pipeline on PARSING forever.
+      if (window.TextDetector) {
+        var nativeSettled = false;
+        var nativeTimer = null;
+        function nativeFallback() {
+          if (nativeSettled || settled) return;
+          nativeSettled = true;
+          if (nativeTimer) clearTimeout(nativeTimer);
+          runOcradPasses();
+        }
+        try {
+          var td = new window.TextDetector();
+          nativeTimer = setTimeout(nativeFallback, OCR_NATIVE_TIMEOUT_MS);
+          Promise.resolve(td.detect(srcCv)).then(function(detected) {
+            if (nativeSettled || settled) return;
+            nativeSettled = true;
+            if (nativeTimer) clearTimeout(nativeTimer);
+            if (detected && detected.length) {
+              detected.sort(function(a, b) {
+                var ab = a.boundingBox || {}, bb = b.boundingBox || {};
+                var dy = (ab.top || 0) - (bb.top || 0);
+                return Math.abs(dy) > 16 ? dy : ((ab.left || 0) - (bb.left || 0));
+              });
+              var nativeRaw = detected.map(function(d) { return d.rawValue || ""; }).join("\n");
+              var cleaned = cleanOcrText(nativeRaw);
+              var res = window.SpicyEngine.parse(cleaned);
+              if (res[0] && res[0].length > 0) {
+                finish({ segs: res[0], warns: res[1], text: cleaned,
+                  rawOcr: nativeRaw, method: "native TextDetector", dur: elapsed() });
+                return;
+              }
+            }
+            runOcradPasses();
+          }, nativeFallback);
+          return;
+        } catch (e) {
+          nativeFallback();
+          return;
+        }
+      }
+      runOcradPasses();
+    }
+
+    // fastDownscale retains the canvas, avoiding a second base64 decode in
+    // the normal path. The data URL fallback keeps this function reusable.
+    if (im.canvas) {
+      begin(im.canvas);
+      return;
+    }
+    var img = new Image();
+    img.onload = function() {
+      var srcCv = document.createElement("canvas");
+      srcCv.width = img.naturalWidth || img.width;
+      srcCv.height = img.naturalHeight || img.height;
+      var ctx = srcCv.getContext("2d", { willReadFrequently: true });
+      if (!ctx) { finish({ segs: [], warns: ["Canvas is not available"], text: "", method: "none", dur: 0 }); return; }
+      ctx.drawImage(img, 0, 0);
+      begin(srcCv);
+    };
+    img.onerror = function() { finish({ segs: [], warns: ["Image load failed"], text: "", method: "none", dur: 0 }); };
+    img.src = "data:" + im.mime + ";base64," + im.b64;
+  });
+}
+
+/* ---------- attachment helpers ---------- */
+function readyImages() { return images.filter(function(im) { return !!im && !im._pending && !im._removed; }); }
+function readyDocuments() { return documents.filter(function(doc) { return !!doc; }); }
+function hasAttachments() { return readyImages().length > 0 || readyDocuments().length > 0 || pendingImageJobs > 0 || pendingDocumentJobs > 0; }
+function fileName(file) { return String((file && file.name) || "attachment"); }
+function imageById(id) {
+  for (var i = 0; i < images.length; i++) {
+    if (images[i] && images[i]._attachmentId === id && !images[i]._removed) return images[i];
+  }
+  return null;
+}
+function hashCanvasSample(cv) {
+  if (!cv || !cv.width || !cv.height) return "";
+  try {
+    // A cheap, content-derived fingerprint for the image cache. Reading a few
+    // sampled pixels is far faster than base64-encoding the entire downscaled
+    // photo, which is what made attachment drops feel slow on mobile.
+    var ctx = cv.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return "";
+    var data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    var step = Math.max(16, (data.length / 20000) | 0);
+    if (step % 4) step = (step + 3) & ~3;
+    var h = 5381;
+    for (var i = 0; i < data.length; i += step) {
+      h = ((h << 5) + h + data[i] + data[i + 1] * 3 + data[i + 2] * 7 + data[i + 3] * 11) >>> 0;
+    }
+    return h.toString(36) + "-" + cv.width + "x" + cv.height;
+  } catch (e) { return ""; }
+}
+function ensureImageDataUrl(im) {
+  if (!im) return "";
+  if (typeof im.b64 === "string" && im.b64) return im.b64;
+  if (im.canvas && im.canvas.getContext && im.canvas.toDataURL) {
+    try {
+      var mime = (im.mime === "image/png") ? "image/png" : "image/jpeg";
+      var url = im.canvas.toDataURL(mime, mime === "image/png" ? 1 : 0.88);
+      var comma = url.indexOf(",");
+      im.b64 = comma >= 0 ? url.slice(comma + 1) : url;
+    } catch (e) { im.b64 = ""; }
+  }
+  return im.b64 || "";
+}
+function imageDataUrl(im) {
+  if (im && typeof im.b64 === "string" && im.b64) return "data:" + im.mime + ";base64," + im.b64;
+  var b64 = ensureImageDataUrl(im);
+  return b64 ? "data:" + im.mime + ";base64," + b64 : "";
+}
+function revokeImagePreview(im) {
+  if (!im || !im._reviewUrl || !im._reviewUrlIsObjectUrl) return;
+  try {
+    var api = window.URL || window.webkitURL;
+    if (api && api.revokeObjectURL) api.revokeObjectURL(im._reviewUrl);
+  } catch (e) {}
+  im._reviewUrl = "";
+  im._reviewUrlIsObjectUrl = false;
+}
+function makeImagePreviewUrl(file) {
+  try {
+    var api = window.URL || window.webkitURL;
+    if (api && api.createObjectURL) return api.createObjectURL(file);
+  } catch (e) {}
+  return "";
+}
+function fileExtension(file) {
+  var name = fileName(file).toLowerCase();
+  var dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot) : "";
+}
+function isImageFile(file) {
+  var type = String((file && file.type) || "").toLowerCase();
+  return type.indexOf("image/") === 0 || /\.(avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(fileName(file));
+}
+function isPdfFile(file) {
+  return String((file && file.type) || "").toLowerCase() === "application/pdf" || fileExtension(file) === ".pdf";
+}
+function isTextFile(file) {
+  var type = String((file && file.type) || "").toLowerCase();
+  return type.indexOf("text/") === 0 || /\.(csv|eml|htm|html|ics|json|log|md|text|tsv|txt|xml)$/i.test(fileName(file));
+}
+function readTextFile(file, maxBytes) {
+  maxBytes = maxBytes || 1000000;
+  var part = file && file.slice ? file.slice(0, maxBytes) : file;
+  if (part && typeof part.text === "function") {
+    return part.text().then(function(text) { return String(text || ""); });
+  }
+  return new Promise(function(resolve, reject) {
+    var rd = new FileReader();
+    rd.onload = function(e) { resolve(String(e.target.result || "")); };
+    rd.onerror = reject;
+    rd.readAsText(part);
+  });
+}
+function readFilePrefix(file, maxBytes) {
+  var part = file && file.slice ? file.slice(0, maxBytes || 32) : file;
+  if (!part || typeof part.arrayBuffer !== "function") return Promise.resolve(null);
+  return part.arrayBuffer().then(function(buf) { return new Uint8Array(buf); }, function() { return null; });
+}
+function signatureKind(bytes) {
+  if (!bytes || !bytes.length) return "";
+  function ascii(offset, value) {
+    if (bytes.length < offset + value.length) return false;
+    for (var i = 0; i < value.length; i++) if (bytes[offset + i] !== value.charCodeAt(i)) return false;
+    return true;
+  }
+  if ((bytes[0] === 0x89 && ascii(1, "PNG")) || ascii(0, "JFIF") || ascii(0, "Exif") ||
+      (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
+      ascii(0, "GIF8") || ascii(0, "BM") || (ascii(0, "RIFF") && ascii(8, "WEBP"))) return "image";
+  if (ascii(0, "%PDF")) return "pdf";
+  return "";
+}
+function classifyFile(file) {
+  if (isImageFile(file)) return Promise.resolve("image");
+  if (isPdfFile(file)) return Promise.resolve("pdf");
+  if (isTextFile(file)) return Promise.resolve("text");
+
+  // Some browsers and downloaded files expose an empty MIME type and no
+  // extension. Check magic bytes before probing text so a nameless PNG/JPEG
+  // is still an image, while binary files never enter the text parser.
+  if (!file || typeof file.size !== "number" || file.size > 1000000) return Promise.resolve("unsupported");
+  return readFilePrefix(file, 32).then(function(bytes) {
+    var signature = signatureKind(bytes);
+    if (signature) return signature;
+    return readTextFile(file, 4096).then(function(sample) {
+      if (!sample || sample.indexOf("\u0000") >= 0) return "unsupported";
+      var bad = 0;
+      for (var i = 0; i < sample.length; i++) {
+        var c = sample.charCodeAt(i);
+        if (c < 9 || (c > 13 && c < 32)) bad++;
+      }
+      return bad / Math.max(1, sample.length) < 0.02 ? "text" : "unsupported";
+    }, function() { return "unsupported"; });
+  });
+}
+/* ---------- high-speed image downscale ---------- */
+function fastDownscale(file, maxSide, quality) {
+  maxSide = maxSide || 1600;
+  quality = typeof quality === "number" ? quality : 0.88;
+  var ext = fileExtension(file);
+  var sourceType = String((file && file.type) || "").toLowerCase();
+  // Keep the encoded MIME aligned with the bytes returned by canvas. Several
+  // browsers silently fall back to PNG for AVIF/SVG/TIFF/WebP output; telling
+  // Gemini that those bytes are still AVIF makes AI attachment conversion fail.
+  var outMime = (sourceType === "image/png" || ext === ".png") ? "image/png" : "image/jpeg";
+  // Browsers cannot draw HEIC/HEIF without a decoder.  Rejecting it cleanly
+  // is much better than leaving the user on a permanent "attaching" state.
+  if (outMime === "image/heic" || outMime === "image/heif" || ext === ".heic" || ext === ".heif") {
+    return Promise.reject(new Error("HEIC/HEIF is not supported by this browser"));
+  }
+
+  return new Promise(function(resolve, reject) {
+    var settled = false;
+    function ok(value) { if (!settled) { settled = true; resolve(value); } }
+    function fail(err) { if (!settled) { settled = true; reject(err instanceof Error ? err : new Error(String(err || "image decode failed"))); } }
+    function canvasResult(cv) {
+      if (!cv || !cv.width || !cv.height) { fail("image has no pixels"); return; }
+      try {
+        // Keep base64 lazily generated. Offline OCR only needs the canvas (and
+        // a cheap pixel hash); doing a full synchronised toDataURL on every
+        // attachment was the largest single stall in the drop/paste path.
+        ok({ mime: outMime, b64: "", w: cv.width, h: cv.height, canvas: cv,
+          _hash: hashStr(outMime + "|" + cv.width + "x" + cv.height + "|" + hashCanvasSample(cv)) });
+      } catch (e) { fail(e); }
+    }
+    function drawBitmap(bmp) {
+      try {
+        var w = bmp.width, h = bmp.height;
+        if (!w || !h) { fail("image has no dimensions"); return; }
+        var sc = Math.min(1, maxSide / Math.max(w, h));
+        var cv = document.createElement("canvas");
+        cv.width = Math.max(1, Math.round(w * sc));
+        cv.height = Math.max(1, Math.round(h * sc));
+        var ctx = cv.getContext("2d");
+        if (!ctx) { fail("Canvas is not available"); return; }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        // Transparent screenshots are common when copied from a browser;
+        // flatten them on white so OCR does not mistake alpha for black text.
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+        if (bmp.close) bmp.close();
+        canvasResult(cv);
+      } catch (e) { fail(e); }
+    }
+    function fallback() {
+      var rd = new FileReader(), img = new Image();
+      rd.onload = function(ev) {
+        img.onload = function() {
+          try {
+            var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+            var sc = Math.min(1, maxSide / Math.max(w, h));
+            var cv = document.createElement("canvas");
+            cv.width = Math.max(1, Math.round(w * sc));
+            cv.height = Math.max(1, Math.round(h * sc));
+            var ctx = cv.getContext("2d");
+            if (!ctx) { fail("Canvas is not available"); return; }
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, cv.width, cv.height);
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
+            canvasResult(cv);
+          } catch (e) { fail(e); }
+        };
+        img.onerror = function() { fail("image could not be decoded"); };
+        img.src = ev.target.result;
+      };
+      rd.onerror = function() { fail("image could not be read"); };
+      rd.readAsDataURL(file);
+    }
+    if (window.createImageBitmap) {
+      var bitmapPromise;
+      try { bitmapPromise = window.createImageBitmap(file, { imageOrientation: "from-image" }); }
+      catch (e) { bitmapPromise = window.createImageBitmap(file); }
+      Promise.resolve(bitmapPromise).then(drawBitmap, fallback);
+    } else fallback();
+  });
+}
+
+function closeAttachmentReview() {
+  activeReviewImageId = null;
+  var modal = $("attachmentReviewModal");
+  if (modal) modal.classList.add("hidden");
+  var reviewImage = $("attachmentReviewImage");
+  if (reviewImage) {
+    if (reviewImage.removeAttribute) reviewImage.removeAttribute("src");
+    else reviewImage.src = "";
+  }
+}
+function openAttachmentReview(id) {
+  var im = imageById(id);
+  if (!im || im._pending) {
+    if (im && im._pending) setStatus("SCREENSHOT STILL LOADING…");
+    return;
+  }
+  activeReviewImageId = id;
+  var reviewImage = $("attachmentReviewImage");
+  var fallback = imageDataUrl(im);
+  if (reviewImage) {
+    reviewImage.alt = "Attached screenshot: " + fileName(im);
+    reviewImage.onerror = function() {
+      // Object URLs preserve the original screenshot for review. If a browser
+      // cannot render that source, the already-decoded attachment still works.
+      if (fallback && reviewImage.src !== fallback) reviewImage.src = fallback;
+    };
+    reviewImage.src = im._reviewUrl || fallback;
+  }
+  var meta = $("attachmentReviewMeta");
+  if (meta) meta.textContent = fileName(im) + (im.w && im.h ? " · " + im.w + " × " + im.h : "");
+  var modal = $("attachmentReviewModal");
+  if (modal) modal.classList.remove("hidden");
+  var close = $("attachmentReviewClose");
+  if (close && close.focus) setTimeout(function() { close.focus(); }, 0);
+}
+function detachAttachmentThumb(im) {
+  var node = im && im._thumbEl;
+  if (!node) return;
+  try {
+    if (node.parentNode && node.parentNode.removeChild) node.parentNode.removeChild(node);
+    else if (node.remove) node.remove();
+  } catch (e) {}
+  im._thumbEl = null;
+}
+function paintAttachmentThumb(im) {
+  var thumb = im && im._thumbEl;
+  var open = im && im._thumbOpen;
+  if (!im || !thumb || !open || im._pending || im._thumbImage) return;
+  if (thumb.classList) thumb.classList.remove("is-loading");
+  if (im._thumbLoading) {
+    try {
+      if (im._thumbLoading.parentNode && im._thumbLoading.parentNode.removeChild) im._thumbLoading.parentNode.removeChild(im._thumbLoading);
+      else if (im._thumbLoading.remove) im._thumbLoading.remove();
+    } catch (e) {}
+    im._thumbLoading = null;
+  }
+  open.disabled = false;
+  open.title = "Review " + fileName(im);
+  open.setAttribute && open.setAttribute("aria-label", "Review screenshot " + fileName(im));
+
+  function paintFrom(src, w, h) {
+    if (!imageById(im._attachmentId) || !im._thumbEl || !w || !h) return;
+    var ts = Math.min(32 / h, 60 / w);
+    var th = document.createElement("canvas");
+    th.width = Math.max(1, Math.round(w * ts));
+    th.height = Math.max(1, Math.round(h * ts));
+    var ctx = th.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(src, 0, 0, th.width, th.height);
+    var image = document.createElement("img");
+    image.className = "attachment-preview-img";
+    image.src = th.toDataURL("image/jpeg", 0.5);
+    image.alt = "";
+    im._thumbImage = image;
+    open.appendChild(image);
+  }
+  if (im.canvas && im.canvas.width && im.canvas.height) {
+    paintFrom(im.canvas, im.canvas.width, im.canvas.height);
+    return;
+  }
+  var image = new Image();
+  image.onload = function() { paintFrom(image, image.width || image.naturalWidth, image.height || image.naturalHeight); };
+  image.src = imageDataUrl(im);
+}
+function addThumb(im) {
+  // Create the control immediately, including while a large screenshot is
+  // decoding. This means the red × can cancel a slow attachment straight away.
+  if (!im || !im._attachmentId) return;
+  var thumb = document.createElement("span");
+  thumb.className = "attachment-thumb";
+  var open = document.createElement("button");
+  open.type = "button";
+  open.className = "attachment-open";
+  open.title = im._pending ? "Screenshot is loading" : "Review " + fileName(im);
+  open.setAttribute && open.setAttribute("aria-label", "Review screenshot " + fileName(im));
+  var remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "attachment-remove";
+  remove.textContent = "×";
+  remove.title = "Remove " + fileName(im);
+  remove.setAttribute && remove.setAttribute("aria-label", "Remove screenshot " + fileName(im));
+  open.addEventListener("click", function() { openAttachmentReview(im._attachmentId); });
+  remove.addEventListener("click", function(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.stopPropagation) event.stopPropagation();
+    removeImage(im._attachmentId);
+  });
+  thumb.appendChild(open);
+  thumb.appendChild(remove);
+  $("thumbs").appendChild(thumb);
+  im._thumbEl = thumb;
+  im._thumbOpen = open;
+  if (im._pending) {
+    open.disabled = true;
+    var loading = document.createElement("span");
+    loading.className = "attachment-loading";
+    loading.textContent = "…";
+    open.appendChild(loading);
+    im._thumbLoading = loading;
+    if (thumb.classList) thumb.classList.add("is-loading");
+    return;
+  }
+  paintAttachmentThumb(im);
+}
+function removeImage(id) {
+  var removed = null;
+  for (var i = 0; i < images.length; i++) {
+    if (images[i] && images[i]._attachmentId === id) {
+      removed = images[i];
+      removed._removed = true;
+      images[i] = null;
+      break;
+    }
+  }
+  if (!removed) return;
+
+  detachAttachmentThumb(removed);
+  revokeImagePreview(removed);
+  if (activeReviewImageId === id) closeAttachmentReview();
+
+  // Invalidates queued/active OCR and AI replies without discarding other
+  // decoded attachments. The remaining screenshots are re-read as one set.
+  latestAttachmentBatch++;
+  imageParseVersion = -1;
+  imageParsePromise = null;
+  cancelOcrWork();
+  invalidateAiForAttachmentChange();
+  out.textContent = "";
+  lastOut = "";
+  var remaining = readyImages();
+  var label = fileName(removed);
+  if (pendingImageJobs > 0 || pendingDocumentJobs > 0) {
+    setStatus("SCREENSHOT REMOVED — updating attachments…");
+    return;
+  }
+  if (remaining.length) {
+    setStatus("SCREENSHOT REMOVED — re-reading " + remaining.length + " image" + (remaining.length === 1 ? "" : "s") + "…");
+    convertImageAttachments(latestAttachmentBatch);
+    return;
+  }
+  if (readyDocuments().length) {
+    setStatus("SCREENSHOT REMOVED — checking remaining attachment…");
+    finishAttachmentConversion(attachmentVersion);
+    return;
+  }
+  var typed = (inp.value || "").trim();
+  if (typed) {
+    setStatus("SCREENSHOT REMOVED — converting text…");
+    convert(false);
+  } else {
+    setStatus("SCREENSHOT REMOVED — " + label);
+  }
+}
+function addFileBadge(file, kind) {
+  var badge = document.createElement("span");
+  badge.className = "attachment-badge";
+  badge.textContent = (kind === "pdf" ? "PDF" : "FILE") + " · " + fileName(file);
+  badge.title = fileName(file);
+  $("thumbs").appendChild(badge);
+}
+function addImage(file, token) {
+  var slot = images.length;
+  var attachmentId = "img_" + (++nextAttachmentId);
+  var reviewUrl = makeImagePreviewUrl(file);
+  var pending = { _attachmentId: attachmentId, _pending: true, name: fileName(file),
+    _reviewUrl: reviewUrl, _reviewUrlIsObjectUrl: !!reviewUrl };
+  images.push(pending); // reserve picker order while decoding happens asynchronously
+  addThumb(pending);
+  pendingImageJobs++;
+  setStatus("IMAGE ATTACHING…");
+  return fastDownscale(file, 1440, 0.86).then(function(im) {
+    // A just-removed image or a cleared generation must not pop back into the
+    // strip when its decoder eventually resolves.
+    if (token !== attachmentVersion || images[slot] !== pending || pending._removed) {
+      revokeImagePreview(pending);
+      return null;
+    }
+    im.name = fileName(file);
+    im._attachmentId = attachmentId;
+    im._reviewUrl = pending._reviewUrl || reviewUrl;
+    im._reviewUrlIsObjectUrl = !!im._reviewUrl;
+    pending._reviewUrl = "";
+    pending._reviewUrlIsObjectUrl = false;
+    // Keep the loading control in place; only its image and click state change.
+    im._thumbEl = pending._thumbEl;
+    im._thumbOpen = pending._thumbOpen;
+    pending._thumbEl = null;
+    pending._thumbOpen = null;
+    images[slot] = im;
+    paintAttachmentThumb(im);
+    return im;
+  }, function(err) {
+    revokeImagePreview(pending);
+    if (token === attachmentVersion && images[slot] === pending) {
+      images[slot] = null;
+      detachAttachmentThumb(pending);
+      setStatus("IMAGE FAILED — " + fileName(file) + " — " + String(err.message || err).slice(0, 70), true);
+    }
+    return null;
+  }).then(function(im) {
+    if (token === attachmentVersion) pendingImageJobs = Math.max(0, pendingImageJobs - 1);
+    return im;
+  });
+}
+function addPdf(file, token) {
+  var slot = documents.length;
+  documents.push(null);
+  pendingDocumentJobs++;
+  addFileBadge(file, "pdf");
+  return readFileAsBase64(file).then(function(data) {
+    if (token !== attachmentVersion) return null;
+    documents[slot] = { mime: "application/pdf", b64: data, name: fileName(file) };
+    return documents[slot];
+  }, function(err) {
+    if (token === attachmentVersion) {
+      documents[slot] = null;
+      setStatus("PDF FAILED — " + fileName(file), true);
+    }
+    return null;
+  }).then(function(doc) {
+    if (token === attachmentVersion) pendingDocumentJobs = Math.max(0, pendingDocumentJobs - 1);
+    return doc;
+  });
+}
+function readFileAsBase64(file) {
+  return new Promise(function(resolve, reject) {
+    var rd = new FileReader();
+    rd.onload = function(e) {
+      var value = String(e.target.result || ""), comma = value.indexOf(",");
+      resolve(comma >= 0 ? value.slice(comma + 1) : value);
+    };
+    rd.onerror = reject;
+    rd.readAsDataURL(file);
+  });
+}
+/* ---------- speculative AI fallback helpers ---------- */
+function aiSpeculationClearTimer() {
+  if (aiSpeculation.timer) { clearTimeout(aiSpeculation.timer); aiSpeculation.timer = null; }
+}
+function aiSpeculationPainted() {
+  // Batch-aware: only a painted reply for the CURRENT attachment batch may
+  // stop local OCR work. Stale state from an older (or key-less) batch never
+  // aborts a fresh parse.
+  return !!(aiSpeculation.fired && aiSpeculation.painted && aiSpeculation.batch === latestAttachmentBatch);
+}
+// Placeholder fields the engine emits when it truly could not read a field
+// (unknown airport "DEP-???", unreadable date/route "????"). A result that
+// still contains these is not a finished itinerary.
+function itineraryHasUnknownFields(text) {
+  return /-\?\?|\?\?\?\?/.test(String(text || ""));
+}
+function renderAttachmentResults(results, token, batch, started) {
+  if (token !== attachmentVersion || batch !== latestAttachmentBatch) return;
+  var allSegs = [], warns = [], imgSegs = 0;
+  results.forEach(function(res) {
+    if (!res) return;
+    if (res.segs && res.segs.length) { allSegs = allSegs.concat(res.segs); imgSegs += res.segs.length; }
+    if (res.warns) res.warns.forEach(function(w) { if (warns.indexOf(w) < 0) warns.push(w); });
+  });
+
+  // If the user attached a text file as well as a screenshot, include the
+  // text in the same deterministic output instead of silently choosing one.
+  var typed = (inp.value || "").replace(/\[screenshot attached[^\n]*\]\n?/g, "").trim();
+  if (typed) {
+    try {
+      var typedResult = window.SpicyEngine.parse(typed);
+      if (typedResult[0] && typedResult[0].length) allSegs = allSegs.concat(typedResult[0]);
+      typedResult[1].forEach(function(w) { if (warns.indexOf(w) < 0) warns.push(w); });
+    } catch (e) {}
+  }
+  allSegs.forEach(function(seg, i) { seg.seg = i + 1; });
+
+  // Safety net: two different flights that came out with an identical route,
+  // date and departure time are not a real itinerary — a field from the first
+  // leg leaked onto the second.  Never present that silently as a result.
+  var bled = false, seen = {};
+  allSegs.forEach(function(seg) {
+    var k = seg.orig + "|" + seg.dest + "|" + seg.date_ddmmm + "|" + seg.dep_time;
+    if (seen[k] && seen[k] !== seg.airline + seg.flight_no) bled = true;
+    seen[k] = seg.airline + seg.flight_no;
+  });
+  if (bled) {
+    if (gemKey()) {
+      setStatus("SEGMENTS LOOK DUPLICATED — re-reading with AI…", true);
+      convertAi(true, "duplicated segment guard");
+      return;
+    }
+    warns.push("segments repeat the same route/date — verify legs 2+ (add a Gemini key and press AI FIX for a re-read)");
+  }
+
+  if (allSegs.length) {
+    var outText = window.SpicyEngine.renderItinerary(allSegs);
+    // A late direct re-read must never stamp over a complete itinerary the
+    // speculative AI call already wrote — not when it only managed placeholder
+    // fields (mistake log: "1 FM 107 ???? ???? Y 738 0.00 0 N / DEP-???"),
+    // and not when it contributes nothing the AI answer did not already cover
+    // (e.g. only the typed text re-parsed while the image read found nothing).
+    if (aiSpeculation.batch === batch && aiSpeculation.painted &&
+        (!imgSegs || itineraryHasUnknownFields(outText))) {
+      setStatus("KEPT AI RESULT — direct re-read was incomplete", true);
+      return;
+    }
+    directPaintedBatch = batch;
+    lastOut = outText;
+    out.textContent = outText;
+    var ms = Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - started);
+    // An attached PDF cannot be read offline; say so instead of letting the
+    // user assume it was part of this result.
+    var pdfNote = (readyDocuments().length && !gemKey()) ? "  ·  PDF needs Gemini (AI FIX)" : "";
+    setStatus("IMAGE PARSED — " + allSegs.length + " seg(s) (" + ms + "ms)" + (warns.length ? "  ·  " + warns.join(" · ") : "") + pdfNote, warns.length > 0);
+    var imgs = readyImages();
+    if (imgs.length === 1 && imgs[0]._hash) imgCacheSet(imgs[0]._hash, outText);
+    recordStat("img_direct", ms);
+    // The direct read produced segments but left unreadable placeholder fields
+    // behind. That is a partial read, not a result — re-read it with AI in the
+    // background instead of making the user notice the ???? and press AI.
+    if (itineraryHasUnknownFields(outText) && gemKey() && readyImages().length && !(inp.value || "").trim()) {
+      if (aiSpeculation.batch === batch && aiSpeculation.fired && !aiSpeculation.done) return; // its reply is already in flight and will replace this
+      setStatus("DIRECT READ INCOMPLETE — AI re-reading…", true);
+      convertAi(true, "AI correction");
+    }
+    return;
+  }
+
+  if (gemKey()) {
+    // The speculative call already answered (or is still in flight) for this
+    // batch: never fire a second AI request for the same attachment set.
+    if (aiSpeculation.batch === batch && aiSpeculation.fired && (aiSpeculation.painted || !aiSpeculation.done)) return;
+    // The speculative timer already logged this batch's AI call: logging it
+    // again here would report two AI calls for one attachment.
+    if (!(aiSpeculation.batch === batch && aiSpeculation.fired)) recordStat("ai_call");
+    setStatus("Image parse did not detect flights — trying AI…");
+    convertAi(true, "undetected attachment");
+  } else {
+    out.textContent = "Could not detect flights in the attachment.\n\nSupported images are converted automatically, and this one came back empty-handed. Save a Gemini key and press AI FIX — it re-reads the same attachment with a vision model and repairs the result.";
+    setStatus("ATTACHMENT NOT READ — AI FIX can re-read it", true);
+  }
+}
+function convertImageAttachments(batch) {
+  if (batch !== latestAttachmentBatch) return;
+  var token = attachmentVersion;
+  var list = readyImages();
+  if (!list.length) return;
+  if (imageParseVersion === batch && imageParsePromise) return;
+  imageParseVersion = batch;
+  var started = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  setStatus("PARSING " + list.length + " IMAGE" + (list.length === 1 ? "" : "S") + "…");
+
+  // A repeated single attachment is served directly from the local cache.
+  // Do not use it when another source is attached: the combined request must
+  // still include the typed itinerary or PDF.
+  if (list.length === 1 && list[0]._hash && !(inp.value || "").trim() && !readyDocuments().length) {
+    var cached = imgCacheGet(list[0]._hash);
+    if (cached && cached.out) {
+      lastOut = cached.out;
+      out.textContent = cached.out;
+      setStatus("CACHED IMAGE — instant");
+      imageParsePromise = null;
+      return;
+    }
+  }
+  imageParsePromise = Promise.all(list.map(parseImageDirect)).then(function(results) {
+    renderAttachmentResults(results, token, batch, started);
+  }, function() {
+    if (token === attachmentVersion && batch === latestAttachmentBatch) {
+      setStatus("ATTACHMENT PARSE FAILED — AI FIX can re-read it", true);
+      if (gemKey()) convertAi(true, "attachment parse error");
+    }
+  }).then(function() {
+    // An older batch may still finish after a newer one starts. Only that
+    // batch may release the shared promise reference.
+    if (imageParseVersion === batch) {
+      imageParsePromise = null;
+      // Direct settled inside the speculation window: the AI call it was
+      // about to fire is unnecessary — cancel it (normal instant path).
+      if (aiSpeculation.batch === batch && !aiSpeculation.fired) aiSpeculationClearTimer();
+    }
+  });
+  if (gemKey()) {
+    // Speculative AI fallback: if the fast direct passes have not answered by
+    // AI_SPECULATE_AFTER_MS, start Gemini NOW and let it race the remaining
+    // bounded direct re-reads (previously these ran serially: 2.2s of passes
+    // + 12s of rescue BEFORE the AI request even started).
+    aiSpeculationClearTimer();
+    aiSpeculation = { batch: batch, fired: false, painted: false, done: false,
+      timer: setTimeout(function() {
+        aiSpeculation.timer = null;
+        if (token !== attachmentVersion || batch !== latestAttachmentBatch) return;
+        if (imageParseVersion !== batch || !imageParsePromise) return; // direct already settled
+        aiSpeculation.fired = true;
+        aiSpeculation.done = false;
+        // An AI *request*, not a conversion: if the direct read lands first this
+        // reply is thrown away ("AI REPLY IGNORED — direct result kept"), and a
+        // discarded reply is not something the user was shown.
+        recordStat("ai_call");
+        setStatus("DIRECT READ UNCLEAR — AI RUNNING IN PARALLEL…");
+        convertAi(true, "undetected attachment", batch);
+      }, AI_SPECULATE_AFTER_MS) };
+  }
+}
+function appendTextFiles(files, token) {
+  return Promise.all(files.map(function(file) {
+    return readTextFile(file, 1000000).then(function(txt) { return { file: file, text: txt }; });
+  })).then(function(items) {
+    if (token !== attachmentVersion) return;
+    var added = 0;
+    items.forEach(function(item) {
+      if (!item.text) return;
+      inp.value += (inp.value ? "\n\n" : "") + item.text.slice(0, 20000);
+      added += item.text.length;
+    });
+    if (!added) { setStatus("EMPTY TEXT ATTACHMENT", true); return; }
+    setStatus("TEXT ATTACHED — " + added + " chars — converting…");
+    convert(false);
+  }, function() {
+    if (token === attachmentVersion) setStatus("TEXT FILE READ FAILED", true);
+  });
+}
+function processAttachments(arr, kinds, token, batch) {
+  if (token !== attachmentVersion) return;
+  var imageJobs = [], textFiles = [], pdfJobs = [];
+  arr.forEach(function(file, i) {
+    if (kinds[i] === "image") imageJobs.push(addImage(file, token));
+    else if (kinds[i] === "text") textFiles.push(file);
+    else if (kinds[i] === "pdf") pdfJobs.push(addPdf(file, token));
+  });
+  var tasks = [];
+  if (textFiles.length) tasks.push(appendTextFiles(textFiles, token));
+  if (pdfJobs.length) tasks.push(Promise.all(pdfJobs).then(function() {
+    if (token !== attachmentVersion || pendingDocumentJobs > 0) return;
+    // Images may still be decoding.  Their completion path owns the combined
+    // conversion so AI is never fired with only half of the attachments.
+    if (pendingImageJobs > 0) return;
+    finishAttachmentConversion(token);
+  }));
+  if (imageJobs.length) tasks.push(Promise.all(imageJobs).then(function() {
+    if (token === attachmentVersion && pendingImageJobs === 0) finishAttachmentConversion(token);
+  }));
+  var unsupported = arr.filter(function(_, i) { return kinds[i] === "unsupported"; });
+  if (unsupported.length) setStatus("UNSUPPORTED ATTACHMENT — " + fileName(unsupported[0]), true);
+  if (!tasks.length && !unsupported.length) setStatus("NO READABLE ATTACHMENTS", true);
+}
+// Single decision point once every attachment of the current generation has
+// finished loading.  Keeps image+PDF combos deterministic: exactly one
+// conversion, with every attachment included.
+function finishAttachmentConversion(token) {
+  if (token !== attachmentVersion) return;
+  var imgs = readyImages(), docs = readyDocuments();
+  if (imgs.length) {
+    // Offline OCR cannot read PDFs.  When one is attached and a key exists,
+    // send images and documents to AI together instead of dropping the PDF
+    // from an offline-only render.
+    if (docs.length && gemKey()) { convertAi(true, "image+PDF attachment"); return; }
+    convertImageAttachments(latestAttachmentBatch);
+    return;
+  }
+  if (docs.length) {
+    if (gemKey()) convertAi(true, "PDF attachment");
+    else setStatus("PDF ATTACHED — AI FIX needs a Gemini key", true);
+    return;
+  }
+  // This is reachable when an image is removed while it was still decoding.
+  // Do not leave the status bar stuck on an updating/loading message.
+  if ((inp.value || "").trim()) convert(false);
+  else if (/UPDATING ATTACHMENTS/i.test(st.textContent || "")) setStatus("SCREENSHOT REMOVED");
+}
+function handleFiles(fileList) {
+  var arr = Array.prototype.slice.call(fileList || []);
+  if (!arr.length) return;
+  var token = attachmentVersion;
+  var batch = ++latestAttachmentBatch;
+  // Stop obsolete local/AI work as soon as another attachment arrives. The
+  // new batch will parse the complete, merged attachment list once decoding ends.
+  cancelOcrWork();
+  invalidateAiForAttachmentChange();
+  // A new batch invalidates any pending speculative AI fallback timer; the
+  // batch-aware guards make a stale reply harmless, but never fire it late.
+  aiSpeculationClearTimer();
+  // A new attachment is a new conversion request; never leave the previous
+  // itinerary copyable while the replacement is being decoded.
+  out.textContent = "";
+  lastOut = "";
+  setStatus("CHECKING ATTACHMENTS…");
+  Promise.all(arr.map(classifyFile)).then(function(kinds) {
+    processAttachments(arr, kinds, token, batch);
+  }, function() { if (token === attachmentVersion && batch === latestAttachmentBatch) setStatus("ATTACHMENT CHECK FAILED", true); });
+}
+
+/* ---------- instant convert ---------- */
+function directIncomplete(warns, segs) {
+  if (!segs.length) return "no segments read";
+  for (var i = 0; i < warns.length; i++)
+    if (/NOT read|missing|unknown/i.test(warns[i])) return warns[i];
+  return null;
+}
+
+function renderDirectSync(text, opts){
+  // A typed/pasted itinerary is ground truth: read it as-is, never rewritten by
+  // rules learned from somebody else's blurry screenshot.
+  // opts.counted === false: this is the debounced re-render that keeps the pane
+  // live while the user is still typing, not a conversion they asked for.
+  var counted = !(opts && opts.counted === false);
+  var cleaned = cleanOcrText(text, { learned: false });
+  var res = window.SpicyEngine.parse(cleaned);
+  var segs = res[0], warns = res[1];
+  if(!segs.length) { lastOut=""; out.textContent=""; return {segs:segs,warns:warns,out:""}; }
+  var outText = window.SpicyEngine.renderItinerary(segs);
+  lastOut = outText;
+  out.textContent = outText;
+  var msg = "CONVERTED — "+segs.length+" segment(s)";
+  if(warns.length) msg+="  ·  "+warns.join(" · ");
+  setStatus(msg, warns.length>0);
+  tCacheSet(fp(text), outText);
+  if (counted) recordStat("text_direct");
+  return {segs:segs,warns:warns,out:outText};
+}
+
+function convert(auto) {
+  // Never let a stuck AI call freeze CONVERT. AI uses `converting`; text parse is sync.
+  var raw = inp.value || "";
+  var text = raw.replace(/\[screenshot attached[^\n]*\]\n?/g, "");
+  var imgs = readyImages();
+  var docs = readyDocuments();
+  var hasImg = imgs.length > 0;
+  var hasAnyAttachment = hasAttachments();
+  if (!text.trim() && !hasAnyAttachment) {
+    out.textContent = "";
+    lastOut = "";
+    setStatus("READY");
+    return;
+  }
+
+  // A file may still be decoding.  Wait for the single attachment pipeline
+  // rather than trying to parse an empty slot and reporting a false failure.
+  if (pendingImageJobs > 0 || pendingDocumentJobs > 0) {
+    setStatus("ATTACHMENT STILL LOADING…");
+    return;
+  }
+
+  // TEXT CACHE: instant repeat (0ms). Do not use it when an image/PDF is also
+  // attached, otherwise the attachment would be silently ignored.
+  if (text.trim() && !hasImg && !docs.length) {
+    var h = fp(text);
+    if (h === lastTextFp && lastOut) { setStatus("CACHED — instant"); return; }
+    var tc = tCacheGet(h);
+    if (tc && tc.out) {
+      lastOut = tc.out;
+      out.textContent = tc.out;
+      lastTextFp = h;
+      setStatus("CACHED TEXT — instant — " + (tc.out.split("\n").filter(function(l) { return / N$/.test(l); }).length) + " segs");
+      recordStat("text_cached");      // a press that produced output, instantly
+      return;
+    }
+  }
+
+  // Images are parsed together, in attachment order. This fixes the old
+  // first-image-only behavior and prevents concurrent OCR callbacks from
+  // overwriting each other.  A PDF rides along through the AI path when a
+  // key exists, because offline OCR cannot read it.
+  if (hasImg) {
+    if (docs.length && gemKey()) { convertAi(auto, "image+PDF attachment"); return; }
+    convertImageAttachments(latestAttachmentBatch);
+    return;
+  }
+
+  // PDFs can be sent to AI as a document, but there is no PDF decoder in this
+  // static offline bundle. Never silently ignore one just because the user
+  // also pasted readable text.
+  if (docs.length) {
+    if (gemKey()) convertAi(auto, "PDF attachment");
+    else setStatus("PDF ATTACHED — AI FIX needs a Gemini key", true);
+    return;
+  }
+
+  if (text.trim() && gemKey() && learnKnows(text)) { convertAi(auto, "learned pattern"); return; }
+
+  // FAST PATH: small text sync parse immediately.
+  if (text.length < 3000) {
+    try {
+      var r = renderDirectSync(text);
+      var lack = directIncomplete(r.warns, r.segs);
+      if (!lack) { lastTextFp = fp(text); return; }
+      if (gemKey()) { convertAi(auto, lack); return; }
+      if (!r.segs.length) {
+        out.textContent = "Couldn't read this paste.\n" + (r.warns[0] || "") + "\n\nThe auto engine could not make sense of it — press AI FIX to re-read it with Gemini (add a key first if asked).";
+        setStatus("INCOMPLETE — needs AI", true);
+      } else {
+        setStatus(st.textContent + "  ·  partial — AI FIX can finish", true);
+      }
+    } catch (e) { setStatus("CONVERT ERROR", true); }
+    return;
+  }
+
+  // LARGE TEXT: yield once so the browser can paint before parsing a large
+  // email/export. The deterministic parser remains synchronous and local.
+  setStatus("CONVERTING…");
+  setTimeout(function() {
+    try {
+      var r = renderDirectSync(text);
+      lastTextFp = fp(text);
+      var lack = directIncomplete(r.warns, r.segs);
+      if (lack && gemKey()) convertAi(auto, lack);
+    } catch (e) { setStatus("CONVERT ERROR", true); }
+  }, 0);
+}
+
+/* ---------- AI ---------- */
+function aiModelSet(m){ window._aiModel=m; try{localStorage.setItem("spicy_gem_model",m);}catch(e){} }
+function aiModelGet(){ try{return localStorage.getItem("spicy_gem_model")||"";}catch(e){return"";} }
+function discoverModel(key){
+  return fetchJson("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key="+encodeURIComponent(key), {}, 25000)
+    .then(function(j){
+      if(j.error) throw new Error(String(j.error.message||"model list failed"));
+      var ms=(j.models||[]).filter(function(m){
+        var n=(m.name||"").toLowerCase();
+        return (m.supportedGenerationMethods||[]).indexOf("generateContent")>=0 &&
+          n.indexOf("models/gemini")===0 &&
+          !/embedding|tts|-image|live|native-audio|aqa|robotics|computer-use|banana/.test(n);
+      }).map(function(m){return m.name.replace(/^models\//,"");});
+      function score(n){ var s=0, v=n.match(/(\d+(?:\.\d+)?)/), ln=n.toLowerCase(); if(ln.indexOf("flash")>=0)s+=1000; if(ln.indexOf("lite")>=0)s-=30; if(/latest/.test(ln))s+=10; if(v)s+=parseFloat(v[1])*10; return s; }
+      ms.sort(function(a,b){return score(b)-score(a);});
+      if(!ms.length) throw new Error("no supported Gemini model on this key");
+      window._aiModelList=ms; aiModelSet(ms[0]); return ms[0];
+    });
+}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function modelQueue(key){
+  function build(list){ var fav=aiModelGet(), q=[]; if(fav&&list.indexOf(fav)>=0)q.push(fav); list.forEach(function(m){if(q.indexOf(m)<0)q.push(m);}); if(!q.length&&fav)q.push(fav); return q; }
+  if(window._aiModelList&&window._aiModelList.length) return Promise.resolve(build(window._aiModelList));
+  var fav=aiModelGet();
+  // A model that worked in a previous session is almost always still valid.
+  // Start with it immediately instead of blocking on the model-list round
+  // trip (2-25s on every fresh page load). Discovery still happens — only
+  // after this model fails, inside geminiGenerate, where it cannot delay
+  // the first attempt.
+  if(fav) return Promise.resolve([fav]);
+  return discoverModel(key).then(function(){return build(window._aiModelList);}, function(){ return Promise.reject(new Error("could not list models on this key")); });
+}
+/* Every Gemini call is time-boxed.  Without this a stalled connection leaves
+   the UI sitting on "AI CONVERTING…" forever, which looks exactly like the
+   button doing nothing at all. */
+function fetchJson(url, opts, ms){
+  var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var o = {}; for(var k in (opts||{})) o[k]=opts[k];
+  if(ctl) o.signal = ctl.signal;
+  var timedOut = false, timer = setTimeout(function(){ timedOut = true; if(ctl) try{ctl.abort();}catch(e){} }, ms || 60000);
+  return fetch(url, o).then(function(r){
+    clearTimeout(timer);
+    return r.json().catch(function(){ throw new Error("AI sent an unreadable reply (HTTP "+r.status+")"); });
+  }, function(err){
+    clearTimeout(timer);
+    if(timedOut) throw new Error("AI timed out after "+Math.round((ms||60000)/1000)+"s — press AI FIX again");
+    throw new Error("network error reaching Gemini — check the connection");
+  });
+}
+function geminiPost(key, model, body){ return fetchJson("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}, 75000); }
+function geminiGenerate(key, body){
+  var MAX_MODELS=3; // never walk an entire model list: at most 3 models total
+  return modelQueue(key).then(function(q){
+    var i=0, lastMsg="", listed=!!window._aiModelList;
+    function tryModel(model, tries){
+      window._aiModel=model;
+      return geminiPost(key,model,body).then(function(j){
+        if(!j.error) return j;
+        var msg=String(j.error.message||"AI error"), code=j.error.status||j.error.code;
+        lastMsg=msg;
+        if(/api key not valid|key invalid|API_KEY_INVALID/i.test(msg)||code==="PERMISSION_DENIED"||code===403) throw Object.assign(new Error(msg),{fatal:true});
+        var transient=code===503||code===429||code==="UNAVAILABLE"||code==="RESOURCE_EXHAUSTED"||/high demand|currently experiencing|try again|overload|rate limit|quota/i.test(msg);
+        if(transient&&tries<2) return sleep(1400*(tries+1)).then(function(){return tryModel(model,tries+1);});
+        if(/not found|no longer available|deprecat|not supported/i.test(msg)){ try{localStorage.removeItem("spicy_gem_model");}catch(e){} delete window._aiModelList; }
+        throw new Error(msg);
+      });
+    }
+    function attempt(){
+      return tryModel(q[i],0).then(null,function(e){
+        if(e.fatal) throw e;
+        i++;
+        if(i>=q.length && !listed && i===1){
+          // The previously saved model failed: list models once now and
+          // continue with the best candidates (the cap still applies).
+          listed=true;
+          return discoverModel(key).then(function(){
+            var extra=(window._aiModelList||[]).slice();
+            var fav=aiModelGet();
+            if(fav&&extra.indexOf(fav)<0) extra.unshift(fav);
+            extra.forEach(function(m){ if(m!==q[0]&&q.indexOf(m)<0&&i<MAX_MODELS) q.push(m); });
+            return attempt();
+          },function(){ throw new Error(lastMsg.slice(0,90)+" — try again shortly"); });
+        }
+        if(i>=q.length||i>=MAX_MODELS) throw new Error(lastMsg.slice(0,90)+" — try again shortly");
+        return attempt();
+      });
+    }
+    return attempt();
+  });
+}
+var AI_SEGMENT_RULES =
+  "\n\nREAD EVERY LEG SEPARATELY. Each flight in the source has its OWN date, "+
+  "own origin, own destination, own departure and arrival times, own aircraft, "+
+  "own flight time and own distance. NEVER copy any field from one leg onto "+
+  "another leg: if leg 2 is a different route or a different day, it must show "+
+  "that different route and day. Output the legs in the order they are flown, "+
+  "one segment per flight, and count them before you answer — the number of "+
+  "segments must equal the number of flights shown in the source.";
+
+/* The `<--additional-->` tail of a Black-Window itinerary is a booking-command
+   echo, not a set of flights. When a user re-pastes our own output for the AI
+   to repair, an LLM that reads it as leg data invents segments — and those
+   invented segments are what the mistake learner used to "learn" from. */
+var AI_ECHO_RULE =
+  " If the input contains a line reading `<--additional-->`, treat everything from that line on as a "+
+  "booking-command echo: IGNORE it completely, do not convert it, do not count it as segments, and do "+
+  "not renumber or reorder the legs above it because of it. Never output a segment for a flight that is "+
+  "not shown in the input; if a field is unreadable, copy the value from the same leg's own row instead "+
+  "of inventing one.";
+
+function convertAi(fromAuto, reason, specBatch){
+  // specBatch: this call is the speculative fallback fired while direct OCR
+  // was still re-reading that attachment batch. Its reply must lose to a
+  // direct result that landed first, and must mark the speculation resolved.
+  if(converting){
+    if(!window._aiStartedAt || Date.now()-window._aiStartedAt < 12000){
+      setStatus("AI ALREADY RUNNING — one moment…"); return;
+    }
+    aiRequestId++; // invalidate the old reply before allowing a retry
+    converting=false; // stale lock (network never returned) — allow retry
+  }
+  if(pendingImageJobs > 0 || pendingDocumentJobs > 0){
+    setStatus("ATTACHMENT STILL LOADING…");
+    return;
+  }
+  var key=gemKey();
+  if(!key){ $("setModal").classList.remove("hidden"); setStatus("AI FIX needs a Gemini key", true); return; }
+  var text=(inp.value||"").replace(/\[screenshot attached[^\n]*\]\n?/g,"");
+  var fallback=lastOut;
+  var requestAttachmentVersion=attachmentVersion;
+  var requestAttachmentBatch=latestAttachmentBatch;
+  var requestId=++aiRequestId;
+  var aiImages=readyImages(), aiDocuments=readyDocuments();
+  converting=true;
+  window._aiStartedAt=Date.now();
+  setStatus((aiImages.length||aiDocuments.length)?"AI CONVERTING (attachment)…":"AI CONVERTING…");
+  // Re-pastes of this tool's own output carry a `<--additional-->` echo block
+  // (segment number + carrier + flight + class + date). Read as input it looks
+  // like extra legs — that is where "AI found 8 segments" for a 4-leg trip came
+  // from, and every bad self-learned rule in the weekly reports was taught from
+  // the mis-pairing it caused. Say so explicitly.
+  var task=text.trim() ? "Convert the following flight data into GDS Black Window format. If anything is missing or ambiguous, fill it from aviation knowledge — never leave fields blank or ???."+AI_SEGMENT_RULES+AI_ECHO_RULE+"\n\n"+text
+    : "Convert the attached image(s) and document(s) into GDS Black Window format. Convert ALL options shown. Fill any missing field from aviation knowledge — never blank, never ???."+AI_SEGMENT_RULES+AI_ECHO_RULE;
+  var parts=[{text: task}];
+  aiImages.forEach(function(im){ parts.push({inline_data:{mime_type:im.mime,data:ensureImageDataUrl(im)}}); });
+  aiDocuments.forEach(function(doc){ parts.push({inline_data:{mime_type:doc.mime,data:doc.b64}}); });
+  var body={ system_instruction:{parts:[{text: window.SpicyEngine.MASTER_PROMPT}]}, contents:[{role:"user",parts:parts}], generationConfig:{temperature:0.0,maxOutputTokens:4096} };
+  geminiGenerate(key, body).then(function(j){
+    // A newer retry or attachment edit owns the UI now. Ignore this reply
+    // entirely rather than clearing its status or restoring an old itinerary.
+    if(requestId!==aiRequestId) return;
+    converting=false; window._aiStartedAt=0;
+    if(requestAttachmentVersion!==attachmentVersion || requestAttachmentBatch!==latestAttachmentBatch){
+      setStatus("AI REPLY IGNORED — attachment changed, press AI FIX again", true);
+      return;
+    }
+    // The direct engine answered first while this speculative call was in
+    // flight: the deterministic itinerary stays, the duplicate reply is
+    // dropped (no repaint, no double cache write). A direct result that only
+    // produced placeholder fields (???? / DEP-???) is NOT a result — the
+    // speculative reply is allowed through to replace it.
+    if(specBatch && directPaintedBatch===specBatch && !itineraryHasUnknownFields(lastOut)){
+      if(aiSpeculation.batch===specBatch){ aiSpeculation.done = true; }
+      setStatus("AI REPLY IGNORED — direct result kept");
+      return;
+    }
+    var ps=(((j.candidates||[])[0]||{}).content||{}).parts||[];
+    var t=ps.map(function(p){return p.text||"";}).join("").trim();
+    if(!t) throw new Error((j.error&&j.error.message)||"empty AI reply");
+    t=t.replace(/^```[a-z]*\s*/i,"").replace(/```\s*$/,"").trim();
+    var rr; try{ rr=window.SpicyEngine.parse(t); }catch(e){ rr=null; }
+    if(rr&&rr[0].length&&rr[0].length >= (t.split("\n").filter(function(l){return / N$/.test(l);}).length)){ t=window.SpicyEngine.renderItinerary(rr[0]); }
+    var previousDirect = lastOut;
+    lastOut=t; out.textContent=t;
+    // The AI reply is on screen: this is the conversion. (The request itself was
+    // logged as `ai_call` when it started, so a reply that is ignored — or one
+    // that never arrives — never lands in the conversion count.)
+    recordStat("ai_painted");
+    // Speculative reply won the race (direct never produced segments): mark it
+    // painted so the still-running direct re-reads stop at their next pass
+    // boundary and the batch completion path does not fire a second AI call.
+    if(specBatch && aiSpeculation.batch===specBatch){ aiSpeculation.painted = true; aiSpeculation.done = true; }
+    // An AI reply that still contains unknown airports is not a finished
+    // itinerary — show it, but never dress it up as a clean result.
+    if(/(DEP|ARR)-\??\?{2,}/.test(t)){
+      setStatus("AI REPLY INCOMPLETE — unknown airport(s); crop the screenshot tighter and press AI FIX again", true);
+    } else {
+      setStatus("AI CONVERTED"+(reason?" ("+reason+")":""));
+    }
+    if(aiImages.length===1&&aiDocuments.length===0&&aiImages[0]._hash) imgCacheSet(aiImages[0]._hash, t);
+    if(text.trim()){ tCacheSet(fp(text), t); lastTextFp=fp(text); }
+    if(reason&&text.trim()) learnRecord(text,t,reason);
+
+    // AI Mistake Detection & Self-Learning: detect mistakes and teach tool to fix it
+    detectMistakesAndLearn(text || "[screenshot]", previousDirect, t, reason);
+  }).catch(function(e){
+    if(requestId!==aiRequestId || requestAttachmentVersion!==attachmentVersion || requestAttachmentBatch!==latestAttachmentBatch) return;
+    // A failed speculative attempt re-opens the normal fallback path so the
+    // batch completion handler may retry (next model in the queue).
+    if(specBatch && aiSpeculation.batch===specBatch){ aiSpeculation.done = true; aiSpeculation.painted = false; }
+    converting=false; window._aiStartedAt=0;
+    if(fallback){ lastOut=fallback; out.textContent=fallback; setStatus("AI failed — previous result kept", true); }
+    else{ setStatus("AI failed: "+String(e.message||e).slice(0,70), true); }
+  });
+}
+
+/* ---------- Weekly Report Generator ---------- */
+/* REPORT:BEGIN */
+function generateWeeklyReportText() {
+  var stats = loadStats();
+  var period = stats.period || {};
+  var lifetime = stats.lifetime || {};
+  var allMistakes = loadMistakes();
+  var rules = loadLearnedRules();
+  var now = new Date();
+  var nowStr = now.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+
+  // The heading says WEEKLY, so the numbers are one week's: the mistake log is
+  // filtered to the same window the counters cover (it stores up to 50 entries
+  // from every week the tool has been used, and mixing them in made a quiet
+  // week look like a bad one).
+  var week = stats.week || statsDayKey(statsWeekStart(now));
+  var today = statsDayKey(now);
+  var mistakes = allMistakes.filter(function(m) {
+    var day = String((m && m.when) || "").slice(0, 10);
+    return !!day && day >= week && day <= today;
+  });
+
+  var totalConv = period.total || 0;
+  var dirConv = (period.textDirect || 0) + (period.imgDirect || 0);
+  // 0 conversions is not a 100% instant rate — it is nothing to rate.
+  var rateTxt = totalConv ? Math.round((dirConv / totalConv) * 100) + "% instant rate"
+                          : "no conversions yet — nothing to rate";
+
+  var avgImgSpeed = "N/A — no screenshots parsed this week";
+  if (period.durations && period.durations.length) {
+    var sum = period.durations.reduce(function(a,b){return a+b;}, 0);
+    var average = Math.round(sum / period.durations.length);
+    avgImgSpeed = average + "ms" + (average < 1000 ? " (< 1s)" : "") +
+                  " across " + period.durations.length + " screenshot(s)";
+  }
+
+  var lines = [];
+  lines.push("=== SPICYTERMINAL WEEKLY PERFORMANCE & ENHANCEMENT REPORT ===");
+  lines.push("To: " + AUTHOR_EMAIL);
+  lines.push("Period: " + week + " → " + today + " (UTC, week starts Monday)");
+  lines.push("Generated: " + nowStr);
+  lines.push("App Version: SpicyTerminal v4.0 (Instant Engine + AI Mistake Learner)");
+  lines.push("");
+  lines.push("--- 1. PERFORMANCE & CONVERSION STATS (this week) ---");
+  lines.push("• Total Conversions: " + totalConv + " (results shown to the user; live re-renders while typing are not counted)");
+  lines.push("• Instant Conversions: " + dirConv + " (" + rateTxt + ")");
+  lines.push("• Direct Screenshot Conversions: " + (period.imgDirect || 0));
+  lines.push("• Average Screenshot Parsing Latency: " + avgImgSpeed);
+  lines.push("• AI Calls Started: " + (period.aiCalls || 0) + " (includes speculative races; a reply the direct read beat is not a conversion)");
+  lines.push("• Conversions Completed By AI: " + (period.aiResolved || 0));
+  lines.push("• Since Install: " + (lifetime.total || 0) + " conversion(s)");
+  var lastWeek = (stats.history && stats.history.length) ? stats.history[stats.history.length - 1] : null;
+  if (lastWeek) {
+    lines.push("• Previous Week (" + lastWeek.week + "): " + (lastWeek.total || 0) + " conversion(s), " +
+               ((lastWeek.textDirect || 0) + (lastWeek.imgDirect || 0)) + " instant, " +
+               (lastWeek.aiResolved || 0) + " completed by AI");
+  }
+  lines.push("");
+  lines.push("--- 2. DETECTED MISTAKES & AI CORRECTIONS (" + mistakes.length + " this week, " +
+             allMistakes.length + " in the stored log) ---");
+  if (!mistakes.length) {
+    lines.push("No mistakes detected this period — direct parsing running smoothly.");
+    lines.push("");
+  } else {
+    if (mistakes.length > 5) lines.push("Newest 5 of " + mistakes.length + ":");
+    mistakes.slice(0, 5).forEach(function(m, idx) {
+      lines.push("#" + (idx+1) + " [" + m.when + "] " + m.reason);
+      lines.push("  Summary: " + m.summary);
+      lines.push("  Input:   " + m.input);
+      lines.push("  Direct:  " + (m.direct || m.offline || ""));
+      lines.push("  AI Fix:  " + m.ai);
+      lines.push("");
+    });
+  }
+  lines.push("--- 3. ACTIVE SELF-LEARNED RULES (" + rules.length + ") ---");
+  if (!rules.length) {
+    lines.push("Standard aviation dictionary rules active (0 custom override rules).");
+  } else {
+    rules.slice(0, 10).forEach(function(r, idx) {
+      // A rule rewrites future OCR text, so the report states what each one
+      // costs if it is wrong: how often it was seen, and how confidently it
+      // was accepted (glyph-confusion checks live in teachRule).
+      var bits = [];
+      if (r.evidence) bits.push("seen " + r.evidence + "x");
+      if (r.seen) bits.push("since " + r.seen);
+      if (r.why) bits.push(r.why);
+      lines.push("#" + (idx+1) + " [" + (r.type || "rule") + "] '" + r.pattern + "' -> '" + r.replacement +
+                 "' (OCR text only; " + (bits.join(", ") || "manual") + ")");
+    });
+    lines.push("Rules are applied to screenshot OCR only — a typed or pasted itinerary is never rewritten.");
+  }
+
+  /* What the learner refused to learn this period: the honest signal that a
+     discrepancy was a comparison artefact rather than a misread. */
+  var refused = mistakes.filter(function(m) {
+    return /not learned|refused|ambiguous|no matching AI leg/i.test((m.summary || "") + " " + (m.rules || ""));
+  });
+  if (refused.length) {
+    lines.push("");
+    lines.push("--- 3b. CORRECTIONS THE LEARNER REFUSED (" + refused.length + ") ---");
+    refused.slice(0, 3).forEach(function(m, idx) {
+      lines.push("#" + (idx+1) + " [" + m.when + "] " + (m.rules || "no rule taught"));
+      lines.push("  Why: " + String(m.summary || "").slice(0, 240));
+    });
+  }
+  lines.push("");
+  lines.push("--- 4. RECOMMENDATIONS TO ENHANCE THE TOOL TO THE MAX ---");
+  // Recommendations are derived from what this period actually showed, not a
+  // fixed list — a report that says the same thing every week cannot be acted on.
+  var recs = [];
+  var imgDirect = (period.imgDirect || 0);
+  recs.push(imgDirect ? "Direct Image Engine handled " + imgDirect + " screenshot(s) on auto; keep OCR bounded and worker-backed."
+                      : "No screenshots converted this period; the auto OCR path is untested on this device.");
+  var aiCalls = period.aiCalls || 0, aiResolved = period.aiResolved || 0;
+  if (aiCalls > aiResolved) {
+    recs.push((aiCalls - aiResolved) + " of " + aiCalls + " AI call(s) never produced a result the user saw (beaten by the direct read, or failed) — that is spare latency/cost, not lost output.");
+  }
+  var unknownRows = mistakes.filter(function(m) { return /\?\?\?|NOT read|undetected/i.test((m.summary || "") + " " + (m.direct || "")); });
+  if (unknownRows.length) {
+    recs.push(unknownRows.length + " conversion(s) still produced placeholder rows (???? / DEP-???) — these are parse-shape gaps in the GDS row reader, not model quality; feed them to test_gds_screenshot.js.");
+  } else {
+    recs.push("No placeholder rows (???? / DEP-???) this period — the GDS row reader held its shape.");
+  }
+  if (rules.length) recs.push(rules.length + " self-learned rule(s) active, applied to screenshot OCR only; review them before the next release and prune any that never fired.");
+  else recs.push("No custom override rules active — the aviation dictionary alone is carrying the load.");
+  if (refused.length) recs.push(refused.length + " AI correction(s) were refused by the learner as comparison artefacts (mis-paired legs), not real misreads — that is the safety net working.");
+  recs.push("Keep AI strictly as fallback for illegible or handwritten images; expand local airport / airline alias mappings for emerging routes.");
+  recs.forEach(function(r, i) { lines.push((i + 1) + ". " + r); });
+  lines.push("");
+  lines.push("--- TELEMETRY ENVIRONMENT ---");
+  lines.push("• UserAgent: " + (navigator.userAgent || "Unknown"));
+  lines.push("• Active AI Model: " + (window._aiModel || aiModelGet() || "(none used)"));
+  lines.push("• OCR Engine: OCRAD + TextDetector (bundled)");
+  lines.push("=============================================================");
+
+  return lines.join("\n");
+}
+
+/* REPORT:END */
+var REPORT_MAIL_SUBJECT = "SpicyTerminal Weekly Report — Performance & AI Mistake Learning";
+/* Gmail compose in a new tab. Two ways this used to look broken:
+   - a blocked pop-up returns null from window.open, so the click looked dead
+     while the modal sat there with no explanation;
+   - the whole report travels in the query string, and browsers refuse or
+     truncate URLs past their length cap, so a long report could arrive half
+     missing. Past the guard the body is left out and the copy button is the
+     way to move it. */
+var MAIL_URL_SOFT_LIMIT = 60000;
+function openGmailCompose(subject, body, blockedHint) {
+  var url = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(AUTHOR_EMAIL) +
+            "&su=" + encodeURIComponent(subject);
+  var withBody = url + "&body=" + encodeURIComponent(body || "");
+  if (withBody.length <= MAIL_URL_SOFT_LIMIT) url = withBody;
+  else url += "&body=" + encodeURIComponent("Report too long for a compose link (" +
+            (body || "").length + " characters) — copy it from the report box and paste it here.");
+  var win = null;
+  try { win = window.open(url, "_blank"); } catch (e) { win = null; }
+  if (!win) setStatus(blockedHint || "POP-UP BLOCKED — allow pop-ups for this site, or use COPY REPORT", true);
+  return !!win;
+}
+function openWeeklyReport() {
+  var reportText = generateWeeklyReportText();
+  $("reportContent").value = reportText;
+  $("reportModal").classList.remove("hidden");
+
+  // Also pre-open Gmail compose in new tab
+  openGmailCompose(REPORT_MAIL_SUBJECT, reportText,
+                   "POP-UP BLOCKED — press EMAIL ADHAM again, or COPY REPORT and paste it");
+}
+
+/* ABOUT:BEGIN */
+/* About is a real modal, so it carries the three things modals usually forget:
+   focus returns to the trigger on close, TAB cannot walk into the app behind the
+   dialog, and ESC closes it. Opening it must never disturb conversion state — no
+   attachment batch is invalidated and no AI request is cancelled, so reading the
+   blurb while a screenshot is still parsing is safe. */
+var APP_VERSION = "4.0.0";
+var aboutReturnFocus = null;
+function openAbout() {
+  var m = $("aboutModal");
+  if (!m || !m.classList.contains("hidden")) return;
+  aboutReturnFocus = document.activeElement;
+  var ver = $("aboutFootVer");
+  if (ver) ver.textContent = "SpicyTerminal v" + APP_VERSION;
+  m.classList.remove("hidden");
+  var card = $("aboutCard");
+  if (card) card.scrollTop = 0;
+  var f = aboutFocusables();
+  if (f.length) { try { f[0].focus({ preventScroll: true }); } catch (e) { f[0].focus(); } }
+}
+function closeAbout() {
+  var m = $("aboutModal");
+  if (!m || m.classList.contains("hidden")) return;
+  m.classList.add("hidden");
+  // Back to `About` — a dialog that dumps focus on <body> leaves the keyboard
+  // user re-tabbing through the whole page to get where they were.
+  if (aboutReturnFocus && aboutReturnFocus.focus) {
+    try { aboutReturnFocus.focus({ preventScroll: true }); } catch (e) { aboutReturnFocus.focus(); }
+  }
+  aboutReturnFocus = null;
+}
+function aboutFocusables() {
+  var card = $("aboutCard");
+  if (!card) return [];
+  var sel = "a[href], button:not([disabled]), [tabindex]:not([tabindex='-1'])";
+  // Anything inside a display:none subtree reports no box, so a control that
+  // is not actually painted is skipped instead of trapping TAB on it.
+  return Array.prototype.slice.call(card.querySelectorAll(sel)).filter(function (el) {
+    if (el.offsetWidth || el.offsetHeight) return true;
+    return el.getClientRects ? el.getClientRects().length > 0 : true;
+  });
+}
+document.addEventListener("keydown", function (event) {
+  var m = $("aboutModal");
+  if (!event || !m || m.classList.contains("hidden")) return;
+  var key = event.key || "";
+  if (key === "Escape") { event.preventDefault(); closeAbout(); return; }
+  if (key !== "Tab") return;
+  var f = aboutFocusables();
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
+function copyAuthorEmail(btn) {
+  // Only the label is rewritten: an innerHTML/textContent write on the button
+  // itself would erase its own icon and make the control jump on click.
+  var lbl = (btn && btn.querySelector) ? btn.querySelector(".about-copy-lbl") : null;
+  function label(txt) { if (lbl) lbl.textContent = txt; else if (btn) btn.textContent = txt; }
+  function done() {
+    label("COPIED \u2713");
+    setStatus("AUTHOR EMAIL COPIED \u2014 " + AUTHOR_EMAIL);
+    setTimeout(function () { label("COPY EMAIL"); }, 1700);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(AUTHOR_EMAIL).then(done, done);
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = AUTHOR_EMAIL;
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    ta.remove(); done();
+  }
+}
+if ($("btnAbout")) $("btnAbout").addEventListener("click", openAbout);
+if ($("aboutClose")) $("aboutClose").addEventListener("click", closeAbout);
+if ($("aboutGo")) $("aboutGo").addEventListener("click", function () { closeAbout(); inp.focus(); });
+if ($("aboutCopyMail")) $("aboutCopyMail").addEventListener("click", function () { copyAuthorEmail(this); });
+if ($("aboutModal")) $("aboutModal").addEventListener("click", function (event) {
+  if (event && event.target === this) closeAbout();   // click the dimmed page, not the card
+});
+/* ABOUT:END */
+
+/* ---------- UI events ---------- */
+$("btnAttach").addEventListener("click", function() { $("filePick").click(); });
+$("filePick").addEventListener("change", function() {
+  // Copy the FileList before resetting the input.  Resetting first is what
+  // allows selecting the same attachment twice in a row in every browser.
+  var fs = Array.prototype.slice.call(this.files || []);
+  this.value = "";
+  handleFiles(fs);
+});
+
+$("attachmentReviewClose").addEventListener("click", closeAttachmentReview);
+$("attachmentReviewDone").addEventListener("click", closeAttachmentReview);
+$("attachmentReviewRemove").addEventListener("click", function() {
+  var id = activeReviewImageId;
+  if (id) removeImage(id);
+});
+$("attachmentReviewModal").addEventListener("click", function(event) {
+  if (event && event.target === this) closeAttachmentReview();
+});
+document.addEventListener("keydown", function(event) {
+  if (event && event.key === "Escape" && activeReviewImageId) closeAttachmentReview();
+});
+
+// Drag & drop anywhere.  Guard dataTransfer because synthetic drag events
+// and some mobile browsers omit it.
+["dragenter", "dragover"].forEach(function(ev) {
+  document.addEventListener(ev, function(e) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }, false);
+});
+document.addEventListener("drop", function(e) {
+  e.preventDefault();
+  var dt = e.dataTransfer;
+  if (!dt) return;
+  if (dt.files && dt.files.length) {
+    handleFiles(Array.prototype.slice.call(dt.files));
+    return;
+  }
+  var txt = dt.getData("text/plain");
+  if (txt) {
+    inp.value += (inp.value ? "\n\n" : "") + txt;
+    convert(false);
+  }
+}, false);
+
+// Paste: screenshots are real clipboard files, not text. Always prevent the
+// textarea's default image insertion and send the files through the same
+// reliable attachment pipeline as the picker and drop zone.
+inp.addEventListener("paste", function(e) {
+  var clip = e.clipboardData || {};
+  var items = clip.items || [];
+  var files = [];
+  var textPlain = "";
+  try { textPlain = clip.getData("text/plain") || ""; } catch (err) {}
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type && items[i].type.indexOf("image/") === 0) {
+      var f = items[i].getAsFile && items[i].getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (files.length) {
+    e.preventDefault();
+    // A few clipboard providers include both OCR text and the screenshot.
+    // Keep meaningful text, then parse both sources together.
+    if (textPlain && textPlain.trim().length > 15) {
+      inp.value += (inp.value ? "\n\n" : "") + textPlain;
+    }
+    handleFiles(files);
+    return;
+  }
+  setTimeout(function() { convert(textPlain.length >= 3000); }, 0);
+});
+
+// Typing: direct text stays instant. An attachment is parsed by its own
+// pipeline, so it must not be overwritten by an input event.
+// Rendering is debounced instead of re-parsing/re-rendering on every keystroke;
+// that cost (engine parse + DOM write + localStorage cache writes) was what
+// made typing feel slow, not the converter itself.
+var typeTimer = null;
+inp.addEventListener("input", function() {
+  if (typeTimer) clearTimeout(typeTimer);
+  var len = inp.value.length;
+  if (!hasAttachments()) {
+    typeTimer = setTimeout(function() {
+      typeTimer = null;
+      // Live preview while typing: parsed and cached, but never counted as a
+      // conversion — one keystroke pause is not one use of the tool.
+      try { renderDirectSync(inp.value, { counted: false }); } catch (e) {}
+    }, len < 2000 ? 55 : 80);
+  }
+});
+
+$("btnConvert").addEventListener("click", function() { convert(false); });
+$("btnAi").addEventListener("click", function() { convertAi(false); });
+$("btnClear").addEventListener("click", function() {
+  // Invalidate all in-flight image/OCR/AI callbacks before releasing their
+  // canvases. They may finish later, but can no longer repaint the cleared UI.
+  attachmentVersion++;
+  latestAttachmentBatch++;
+  cancelOcrWork();
+  invalidateAiForAttachmentChange();
+  images.forEach(revokeImagePreview);
+  closeAttachmentReview();
+  pendingImageJobs = 0;
+  pendingDocumentJobs = 0;
+  imageParseVersion = -1;
+  imageParsePromise = null;
+  inp.value = "";
+  out.textContent = "";
+  lastOut = "";
+  images = [];
+  documents = [];
+  $("thumbs").innerHTML = "";
+  lastTextFp = "";
+  setStatus("READY");
+  inp.focus();
+});
+$("btnCopy").addEventListener("click", function() {
+  if (!lastOut) { setStatus("NOTHING TO COPY", true); return; }
+  var done = function() { setStatus("COPIED ✓"); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(lastOut).then(done, function() {
+      var ta = document.createElement("textarea");
+      ta.value = lastOut;
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      ta.remove(); done();
+    });
+  } else {
+    var fallback = document.createElement("textarea");
+    fallback.value = lastOut; document.body.appendChild(fallback); fallback.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    fallback.remove(); done();
+  }
+});
+
+if(!localStorage.getItem("spicy_seen")) {
+  $("welcome").classList.remove("hidden");
+  // A returning visitor that cleared the welcome card but still has a key
+  // sees the input pre-filled, so START never nags for what is already saved.
+  if (gemKey()) $("gemKeyWelcome").value = gemKey();
+}
+function closeWelcome(){
+  $("welcome").classList.add("hidden");
+  try { localStorage.setItem("spicy_seen", "1"); } catch (e) {}
+}
+function welcomeKeyNudge(msg){
+  var warn = $("welcomeKeyWarn");
+  if (warn) { warn.textContent = msg; warn.classList.remove("hidden"); }
+  var keyInput = $("gemKeyWelcome");
+  if (keyInput) { keyInput.classList.add("keywarn"); keyInput.focus(); }
+  setStatus("ADD YOUR API KEY FIRST — or continue in auto mode", true);
+}
+$("enterBtn").addEventListener("click", function(){
+  var entered = ($("gemKeyWelcome").value || "").trim();
+  if (entered) {
+    try { localStorage.setItem("spicy_gem_key", entered); } catch (e) {}
+    $("gemKey").value = entered;
+    closeWelcome();
+    setStatus("KEY SAVED — READY");
+    return;
+  }
+  if (gemKey()) { closeWelcome(); return; }
+  welcomeKeyNudge("Add your API key first — it is free and takes 20 seconds (Generate Api above).");
+});
+$("enterOffline").addEventListener("click", function(){
+  closeWelcome();
+  setStatus("AUTO MODE — pastes still convert; add a key to unlock AI FIX", true);
+});
+$("setClose").addEventListener("click", function(){ $("setModal").classList.add("hidden"); });
+$("setSave").addEventListener("click", function(){
+  try { localStorage.setItem("spicy_gem_key", $("gemKey").value.trim()); } catch (e) {}
+  $("setModal").classList.add("hidden");
+  setStatus("KEY SAVED");
+});
+function openGenKey(){
+  window.open("https://aistudio.google.com/apikey", "_blank");
+  $("gemKey").value = gemKey();
+  $("setModal").classList.remove("hidden");
+}
+$("genKey").addEventListener("click", openGenKey);
+
+// Weekly Report Modal & Buttons
+if ($("btnWeeklyReport")) $("btnWeeklyReport").addEventListener("click", openWeeklyReport);
+if ($("reportClose")) $("reportClose").addEventListener("click", function(){ $("reportModal").classList.add("hidden"); });
+if ($("reportCopy")) $("reportCopy").addEventListener("click", function(){
+  var txt = $("reportContent").value;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(function(){ setStatus("WEEKLY REPORT COPIED ✓"); });
+  }
+});
+if ($("reportSend")) $("reportSend").addEventListener("click", function(){
+  openGmailCompose(REPORT_MAIL_SUBJECT, $("reportContent").value,
+                   "POP-UP BLOCKED — allow pop-ups for this site, or COPY REPORT and paste it into a new email");
+});
+
+// Bug Report: Send to adhambadraan@gmail.com
+$("report").addEventListener("click", function(){
+  var input=(inp.value||"").trim(), output=lastOut||"";
+  function cap(s,n){ return s.length>n ? s.slice(0,n)+"\n…[trimmed]" : s; }
+  var learn=learnAll();
+  var learnTxt=learn.length ? "\n=== ENGINE LEARN LOG ("+learn.length+") ===\n"+ learn.slice(0,3).map(function(l,i){ return (i+1)+") "+l.when+" — "+l.why+"\nIN : "+l.in+"\nOUT: "+l.out; }).join("\n") : "";
+  var mistakes = loadMistakes();
+  var mistakeTxt = mistakes.length ? "\n=== RECENT DETECTED MISTAKES ("+mistakes.length+") ===\n" + mistakes.slice(0, 3).map(function(m, i){ return (i+1)+") "+m.when+" — "+m.summary; }).join("\n") : "";
+
+  var body="=== SPICY TERMINAL BUG REPORT ===\nTO: "+AUTHOR_EMAIL+"\nWHEN: "+new Date().toISOString().replace("T"," ").slice(0,19)+" UTC\nAI MODEL: "+(window._aiModel||aiModelGet()||"(none used)")+"\n\n=== WHAT I PASTED ===\n"+(cap(input,1300)||"(empty)")+"\n\n=== WHAT THE APP PRODUCED ===\n"+(cap(output,1300)||"(empty)")+"\n\n=== WHAT I EXPECTED INSTEAD ===\n\n\n=== ANY OTHER DETAILS ===\n"+learnTxt+mistakeTxt;
+  openGmailCompose("SpicyTerminal bug report", body,
+                   "POP-UP BLOCKED — allow pop-ups for this site to send the bug report");
+});
+
+// Boot the OCR worker during page idle (not on the first screenshot) so the
+// first drop/paste converts much faster.
+try {
+  if (window.addEventListener) {
+    window.addEventListener("load", function() { prewarmOcrWorker(250); }, { once: true });
+  }
+  // Safety net in case the script is injected after `load` already fired.
+  setTimeout(function() { prewarmOcrWorker(0); }, 900);
+} catch (e) {}
+// Share the single inlined wordmark with the welcome card instead of embedding
+// the same ~300KB base64 twice in the static page.
+try {
+  var _wmH = $("wordmarkHeader"), _wmW = $("wordmarkWelcome"), _wmA = $("wordmarkAbout");
+  var _wmSrc = _wmH ? (_wmH.getAttribute("src") || _wmH.src) : "";
+  if (_wmW && !_wmW.getAttribute("src")) _wmW.setAttribute("src", _wmSrc);
+  // Same trick for the About dialog: the wordmark is one base64 blob, shared.
+  if (_wmA && !_wmA.getAttribute("src")) _wmA.setAttribute("src", _wmSrc);
+} catch (e) {}
+
+})();

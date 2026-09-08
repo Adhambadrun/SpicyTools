@@ -1,4 +1,4 @@
-# `@spicyquote/widget` — the SpicyQuote search widget
+# `@spicytools/widget` — the SpicyTools search widget
 
 An embeddable flight search form with a **spice rack**: a rail of heat-rated fares above the form
 that fills the search in one tap. Drop it on any page with two files and one function call.
@@ -6,10 +6,10 @@ that fills the search in one tap. Drop it on any page with two files and one fun
 ```html
 <div id="root"></div>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700&display=swap">
-<link rel="stylesheet" href="spicyquote.min.css">
-<script src="spicyquote.min.js"></script>
+<link rel="stylesheet" href="spicytools.min.css">
+<script src="spicytools.min.js"></script>
 <script>
-  SpicyQuote.init({
+  SpicyTools.init({
     rootElement: document.getElementById('root'),
     spicyURL: 'https://your-fare-api.example.com',
     locale: 'en',
@@ -56,7 +56,7 @@ fills the whole form (route, dates, trip type) and runs the search.
 | 35–49% | `hot` | 🌶🌶🌶 |
 | 50%+ | `inferno` | 🌶🌶🌶🌶 |
 
-SpicyQuote never invents a bargain: if you do not tell it what the route usually costs, it will not
+SpicyTools never invents a bargain: if you do not tell it what the route usually costs, it will not
 claim your fare is a steal.
 
 ## Configuration
@@ -67,7 +67,7 @@ claim your fare is a steal.
 | **spicyURL** | **yes** | `string` | — | Base URL of your fare API (autocomplete, availability, results). |
 | fallbackSpicyURL | — | `string` | — | Fallback fare API used when the primary request fails. |
 | webskyURL | — | `string` | — | Websky booking system URL (required in `WEBSKY` mode). |
-| mode | — | `string` | `SPICY` | `SPICY` (SpicyQuote fare API) or `WEBSKY`. |
+| mode | — | `string` | `SPICY` | `SPICY` (SpicyTools fare API) or `WEBSKY`. |
 | locale | — | `string` | `en` | `en`, `ru`, `de`, `it`, `nl`, `ro`, `kk`, `uz`, `uk`. |
 | **hotDeals** | — | `HotDeal[]` | `[]` | Fares for the spice rack — see above. |
 | hideDeals | — | `boolean` | `false` | Hide the rack even when `hotDeals` is set. |
@@ -103,16 +103,16 @@ claim your fare is a steal.
 ```js
 // Fill the form from a card, banner or agent response — no navigation needed if
 // you also passed `onSearch`.
-SpicyQuote.applyDeal({ departure: 'CAI', arrival: 'IST', price: 118 });
+SpicyTools.applyDeal({ departure: 'CAI', arrival: 'IST', price: 118 });
 
 // Re-enable local-storage caching after `disableCaching: true`.
-SpicyQuote.enableCache();
+SpicyTools.enableCache();
 ```
 
 `onSearch` receives a normalised payload:
 
 ```js
-SpicyQuote.init({
+SpicyTools.init({
   rootElement,
   spicyURL,
   onSearch: (info) => {
@@ -127,20 +127,20 @@ SpicyQuote.init({
 Every interaction dispatches a DOM event you can forward to GA, Meta Pixel, and friends:
 
 ```js
-document.addEventListener('analytics.spicyquote.search', (event) => {
-  ga('send', { hitType: 'event', eventCategory: 'SpicyQuote', eventAction: 'search', eventLabel: event.detail });
+document.addEventListener('analytics.spicytools.search', (event) => {
+  ga('send', { hitType: 'event', eventCategory: 'SpicyTools', eventAction: 'search', eventLabel: event.detail });
 });
 ```
 
 | Event | `detail` |
 | :- | :- |
-| `analytics.spicyquote.search` | — a valid search was launched |
-| `analytics.spicyquote.deal.applied` | `"CAI-IST"` — a spice-rack fare was loaded |
-| `analytics.spicyquote.tripType.value` | `OW` / `RT` / `CR` |
-| `analytics.spicyquote.directFlights.active` | `true` / `false` |
-| `analytics.spicyquote.serviceClass.value` | `Economy` / `Business` |
-| `analytics.spicyquote.vicinityDates.active` | `true` / `false` |
-| `analytics.spicyquote.search.validationError` | error code — search attempted with an invalid form |
+| `analytics.spicytools.search` | — a valid search was launched |
+| `analytics.spicytools.deal.applied` | `"CAI-IST"` — a spice-rack fare was loaded |
+| `analytics.spicytools.tripType.value` | `OW` / `RT` / `CR` |
+| `analytics.spicytools.directFlights.active` | `true` / `false` |
+| `analytics.spicytools.serviceClass.value` | `Economy` / `Business` |
+| `analytics.spicytools.vicinityDates.active` | `true` / `false` |
+| `analytics.spicytools.search.validationError` | error code — search attempted with an invalid form |
 
 ## Theming
 
@@ -151,7 +151,7 @@ tokens before importing `main.scss`, or override the compiled CSS variables at r
 $ember: #ff0080;
 $smoke-900: #0b0b12;
 
-@import "spicyquote/widget/src/css/main";
+@import "spicytools/widget/src/css/main";
 ```
 
 The default palette is **Smoke & Hot Sauce**: charcoal panels (`$smoke-900`), ember-red primary
@@ -167,20 +167,20 @@ npm run build        # production bundle into dist/
 npm test             # jest
 ```
 
-The datepicker and select are upstream React ports consumed through `@spicyquote/*` specifiers,
+The datepicker and select are upstream React ports consumed through `@spicytools/*` specifiers,
 aliased to the published packages in `webpack.common.js` and `tsconfig.json` — swap the alias and
 the whole widget moves with it.
 
 ## Renamed from `flights.search.widget`
 
-This package started life as the Nemo `flights.search.widget`. Everything SpicyQuote-owned has been
+This package started life as the Nemo `flights.search.widget`. Everything SpicyTools-owned has been
 renamed; the table below is the migration map.
 
 | Before | After |
 | :- | :- |
-| `FlightsSearchWidget.init()` | `SpicyQuote.init()` |
-| `FlightsSearchWidget.enableCache()` | `SpicyQuote.enableCache()` |
+| `FlightsSearchWidget.init()` | `SpicyTools.init()` |
+| `FlightsSearchWidget.enableCache()` | `SpicyTools.enableCache()` |
 | `nemoURL` / `fallbackNemoURL` | `spicyURL` / `fallbackSpicyURL` |
 | `mode: 'NEMO'` | `mode: 'SPICY'` |
-| `flights.search.widget.min.{js,css}` | `spicyquote.min.{js,css}` |
-| `analytics.searchForm.*` events | `analytics.spicyquote.*` events |
+| `flights.search.widget.min.{js,css}` | `spicytools.min.{js,css}` |
+| `analytics.searchForm.*` events | `analytics.spicytools.*` events |

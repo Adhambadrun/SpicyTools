@@ -6,7 +6,7 @@
 //
 // Ported from the TBC Floating Flight Search Widget (v12.2): every reference to
 // TBC / bo.travelbusinessclass.com has been re-pointed at BCF /
-// bo.bcflights.com, and the palette is SpicyQuote's dark smoke & hot sauce.
+// bo.bcflights.com, and the palette is SpicyTools's dark smoke & hot sauce.
 //
 // Expects the builders in ./flight-links.js to be in scope — `build.mjs`
 // concatenates both inside one IIFE.
@@ -671,7 +671,7 @@
       const leg = searchLegs(FX.currentLead)[parseInt(btn.dataset.leg, 10)];
       const url = btn.dataset.target === 'py'
         ? buildPointsYeahUrl(FX.currentLead, leg, flexValue(), getSelectedCabin())
-        : buildSpicyQuoteUrl(FX.currentLead, leg, getSelectedCabin());
+        : buildSpicyToolsUrl(FX.currentLead, leg, getSelectedCabin());
       if (url) window.open(url, '_blank');
     });
     document.getElementById('fx-tool-vip').addEventListener('click', () => openTool(VIP_HTML));

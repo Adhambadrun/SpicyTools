@@ -12,12 +12,13 @@ import { cacheState, getStore } from './store';
 import './css/main.scss';
 import { ApplicationState, HotDeal, Language, OnSearchFunction, SystemState } from './state';
 import { enableCaching } from './store/system/actions';
+import Component from './components/Component';
 import { applyDeal as applyDealAction } from './store/form/deals/actions';
 
 let storeGlobal: Store<ApplicationState>;
 
 /**
- * This is exported to the global scope as `SpicyQuote.init`.
+ * This is exported to the global scope as `SpicyTools.init`.
  *
  * @param {SystemState} config
  */
@@ -72,14 +73,14 @@ export const init = (config: SystemState) => {
  * banner, anything) instead of duplicating form-filling logic:
  *
  * ```js
- * SpicyQuote.applyDeal({ departure: 'CAI', arrival: 'IST', price: 118 });
+ * SpicyTools.applyDeal({ departure: 'CAI', arrival: 'IST', price: 118 });
  * ```
  *
  * @param {HotDeal} deal
  */
 export const applyDeal = (deal: HotDeal): void => {
 	if (!storeGlobal) {
-		throw Error('Call `SpicyQuote.init()` before `SpicyQuote.applyDeal()`.');
+		throw Error('Call `SpicyTools.init()` before `SpicyTools.applyDeal()`.');
 	}
 
 	storeGlobal.dispatch(applyDealAction(deal));
@@ -92,4 +93,15 @@ export const enableCache = (): void => {
 	storeGlobal.dispatch(enableCaching());
 };
 
-export { default as Component } from './components/Component';
+export { Component };
+
+/**
+ * Back-compat alias.
+ *
+ * The widget was published as `SpicyQuote` before the rename to SpicyTools.
+ * Embeds that still call `SpicyQuote.init(...)` keep working; new ones should
+ * use `SpicyTools`. Deprecated — it goes away in the next major version.
+ */
+if (typeof window !== 'undefined') {
+	(window as any).SpicyQuote = { init, applyDeal, enableCache, Component };
+}

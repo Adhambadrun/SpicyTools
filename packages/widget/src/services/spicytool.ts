@@ -6,7 +6,7 @@ import { URL } from '../utils';
 import { HEAT_LEVELS, HotDeal } from '../deals';
 
 /**
- * SpicyTool API client — the interface SpicyQuote speaks.
+ * SpicyTool API client — the interface SpicyTools speaks.
  *
  * SpicyTool (packages/spicytool) is the award-search engine: it owns the
  * airport dataset, the fare calendar and the provider aggregation. This module

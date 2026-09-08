@@ -1,10 +1,10 @@
-/* SpicyQuote master app — plain browser JS, no build step.
+/* SpicyTools master app — plain browser JS, no build step.
  *
  * Wires three things together:
  *   1. the search widget (packages/widget) — given the deal feed as its spice rack,
  *      with `onSearch` so the demo shows the payload instead of navigating away;
  *   2. the spice board — the same feed, filterable, and able to drive the widget
- *      through the `SpicyQuote.applyDeal()` hook;
+ *      through the `SpicyTools.applyDeal()` hook;
  *   3. the MCP tool registry and dataset stats, read from this server.
  */
 
@@ -35,7 +35,7 @@ async function getJSON(url) {
 }
 
 
-/* A SpicyQuote deep link from the BCF widget (?origin=CAI&destination=JFK&date=…)
+/* A SpicyTools deep link from the BCF widget (?origin=CAI&destination=JFK&date=…)
  * lands here: load the route straight into the widget so the agent can price it
  * in our engine without retyping anything. */
 function applyDeepLink() {
@@ -56,7 +56,7 @@ function applyDeepLink() {
     adults: Number(params.get('passengers')) || 1
   };
 
-  window.SpicyQuote.applyDeal(deal);
+  window.SpicyTools.applyDeal(deal);
   document.getElementById('search').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -161,7 +161,7 @@ function renderBoard() {
 
         // Hand the fare to the widget: it fills the form and runs the search,
         // which lands in our `onSearch` handler instead of leaving the page.
-        window.SpicyQuote.applyDeal(deal);
+        window.SpicyTools.applyDeal(deal);
         document.getElementById('search').scrollIntoView({ behavior: 'smooth', block: 'start' });
       })
     );
@@ -231,7 +231,7 @@ async function boot() {
   );
 
   // The widget: same feed, top fares only, search handled in-page.
-  window.SpicyQuote.init({
+  window.SpicyTools.init({
     rootElement: $('search-root'),
     // The SpicyTool-shaped API this very server exposes (see server.mjs).
     // Point `apiBase` at `https://your-spicytool-host` to use a real backend.

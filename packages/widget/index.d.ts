@@ -184,13 +184,13 @@ declare global {
 		 * Global entry point of the widget bundle.
 		 *
 		 * ```html
-		 * <script src="spicyquote.min.js"></script>
+		 * <script src="spicytools.min.js"></script>
 		 * <script>
-		 *   SpicyQuote.init({ rootElement: document.getElementById('root'), spicyURL: '...' });
+		 *   SpicyTools.init({ rootElement: document.getElementById('root'), spicyURL: '...' });
 		 * </script>
 		 * ```
 		 */
-		SpicyQuote: {
+		SpicyTools: {
 			init: (config: ComponentProps) => void;
 			enableCache: () => void;
 			Component: typeof Component;

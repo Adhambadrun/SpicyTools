@@ -24,7 +24,7 @@ const segment = {
 };
 
 const customState = {
-	spicyURL: 'http://api.spicyquote.test'
+	spicyURL: 'http://api.spicytools.test'
 };
 
 describe('runSpicySearch', () => {
@@ -61,7 +61,7 @@ describe('runSpicySearch', () => {
 			state.form.segments = [segment as any];
 
 			expect(spicyFastSearch(state)).toEqual(
-				'http://api.spicyquote.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1'
+				'http://api.spicytools.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1'
 			);
 		});
 
@@ -74,7 +74,7 @@ describe('runSpicySearch', () => {
 
 			// `return_flex=0` is the API default, so it is not sent.
 			expect(spicyToolSearchURL(state)).toEqual(
-				'http://api.spicyquote.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1&return_date=2018-12-09'
+				'http://api.spicytools.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1&return_date=2018-12-09'
 			);
 		});
 
@@ -88,7 +88,7 @@ describe('runSpicySearch', () => {
 			state.form.additional.directFlight = true;
 
 			expect(spicyToolSearchURL(state)).toEqual(
-				'http://api.spicyquote.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1&max_stops=0&return_date=2018-12-09&return_flex=3'
+				'http://api.spicytools.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1&max_stops=0&return_date=2018-12-09&return_flex=3'
 			);
 		});
 	});

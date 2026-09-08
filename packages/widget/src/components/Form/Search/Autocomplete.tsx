@@ -1,6 +1,6 @@
 import * as React from 'react';
 import * as classnames from 'classnames';
-import Select from '@spicyquote/react-select';
+import Select from '@spicytools/react-select';
 import MobileHeader from '../../UI/MobileHeader';
 import Tooltip from '../../UI/Tooltip';
 import Option from './Autocomplete/Option';
@@ -91,7 +91,7 @@ export default class Autocomplete extends React.Component<Props, State> {
 	onFocusHandler(): void {
 		const IPHONE_SCREEN_SIZE = 651;
 
-		// https://support.spicyquote.travel/issues/52266
+		// https://support.spicytools.travel/issues/52266
 		if (
 			window.innerWidth < IPHONE_SCREEN_SIZE &&
 			navigator.vendor &&

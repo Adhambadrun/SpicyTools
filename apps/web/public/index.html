@@ -3,20 +3,20 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>SpicyQuote — fares with a kick</title>
-	<meta name="description" content="SpicyQuote finds fares with a kick: an embeddable flight search widget with a heat-rated deal feed, plus an MCP server that lets agents hunt hot fares for you.">
+	<title>SpicyTools — fares with a kick</title>
+	<meta name="description" content="SpicyTools finds fares with a kick: an embeddable flight search widget with a heat-rated deal feed, plus an MCP server that lets agents hunt hot fares for you.">
 	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌶️</text></svg>">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-	<link rel="stylesheet" href="/widget/spicyquote.min.css">
+	<link rel="stylesheet" href="/widget/spicytools.min.css">
 	<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 	<header class="topbar">
 		<a class="brand" href="/">
-			<img class="brand__mark" src="/logo.png" alt="SpicyQuote">
-			<span class="brand__name">Spicy<em>Quote</em></span>
+			<img class="brand__mark" src="/logo.png" alt="SpicyTools">
+			<span class="brand__name">Spicy<em>Tools</em></span>
 		</a>
 
 		<nav class="topbar__nav">
@@ -32,7 +32,7 @@
 			<p class="hero__kicker">🌶️ Fares with a kick</p>
 			<h1 class="hero__title">Stop scrolling.<br>Start <span class="grad">booking hot fares</span>.</h1>
 			<p class="hero__sub">
-				SpicyQuote rates every fare on a four-chilli heat scale, drops the hottest ones into a
+				SpicyTools rates every fare on a four-chilli heat scale, drops the hottest ones into a
 				search you can finish in one tap, and exposes the whole thing to AI agents over MCP.
 			</p>
 
@@ -46,7 +46,7 @@
 		<section id="search" class="panel">
 			<div class="panel__head">
 				<h2>Search</h2>
-				<p>The SpicyQuote widget. Pick a route — or tap a fare from the spice rack above the form and it fills itself in.</p>
+				<p>The SpicyTools widget. Pick a route — or tap a fare from the spice rack above the form and it fills itself in.</p>
 			</div>
 
 			<div id="search-root" class="search-root"></div>
@@ -107,6 +107,49 @@
 			<div id="tools-grid" class="tools"></div>
 		</section>
 
+		<section id="tools" class="panel">
+			<div class="panel__head">
+				<h2>Terminal &amp; Link</h2>
+				<p>
+					Two agent tools, chained: paste a flight into the <strong>Terminal</strong> to get a
+					GDS black-window itinerary, then hand it to <strong>Link</strong> for booking-ready
+					AA / United / Delta / BA / Google Flights / ITA Matrix links and BookWithMatrix JSON.
+				</p>
+			</div>
+
+			<div class="toolgrid">
+				<article class="toolcard">
+					<h3>SpicyTools Terminal</h3>
+					<p>
+						Paste flights from Google Flights, an airline site, an email or a screenshot. A
+						deterministic offline engine returns the GDS black window: real IATA aircraft
+						codes, 12-hour clocks, overnight markers, hidden-stop merging, one
+						chronological ticket order. Nothing leaves the browser.
+					</p>
+					<ul class="bullets">
+						<li>100% offline — OCR runs in-page; AI is opt-in and never overwrites a good read.</li>
+						<li>Available to agents as <code>POST /api/terminal/convert</code> and the MCP tool <code>gds_itinerary</code>.</li>
+					</ul>
+					<a class="btn" href="/terminal">Open the Terminal →</a>
+				</article>
+
+				<article class="toolcard">
+					<h3>SpicyTools Link</h3>
+					<p>
+						Paste (or inherit) a GDS itinerary and get every booking link an agent needs:
+						AA metasearch, AA, United, Delta, British Airways, Alaska, Google Flights and
+						ITA Matrix — plus the BookWithMatrix JSON and a fare estimate.
+					</p>
+					<ul class="bullets">
+						<li>Behind the real two-factor gate: an <code>@bcflights.com</code> email, a
+							6-digit code emailed to the approver, per-tab sessions that idle out in 5 minutes.</li>
+						<li>Arriving from the Terminal? The itinerary is already in the box.</li>
+					</ul>
+					<a class="btn" href="/link/">Open Link →</a>
+				</article>
+			</div>
+		</section>
+
 		<section id="bcf" class="panel">
 			<div class="panel__head">
 				<h2>BCF floating widget</h2>
@@ -114,7 +157,7 @@
 					The agent-side companion: a floating search panel for
 					<code>bo.bcflights.com</code>. It detects the lead you are looking at and opens
 					it in Kayak, Google Flights, ITA Matrix (including mixed-cabin and the ELR/YVR
-					trick), PointsYeah or SpicyQuote — plus Sabre Fast Search, the VIP itinerary
+					trick), PointsYeah or SpicyTools — plus Sabre Fast Search, the VIP itinerary
 					maker, the GK converter and the PNR how-to. Every fare on the board above
 					offers the same links, built by the same module.
 				</p>
@@ -128,7 +171,7 @@
 			<ul class="bullets">
 				<li>Install it in Tampermonkey / Violentmonkey, then open any lead on Bo.BCFlights.com.</li>
 				<li>Drag the panel by its header, collapse it to the pepper bubble, hit ⟳ to re-detect.</li>
-				<li>Rebuild it after editing the sources: <code>npm run build --workspace @spicyquote/bcf-widget</code>.</li>
+				<li>Rebuild it after editing the sources: <code>npm run build --workspace @spicytools/bcf-widget</code>.</li>
 			</ul>
 		</section>
 
@@ -144,8 +187,8 @@
 
 	<footer class="footer">
 		<div class="footer__brand">
-			<img src="/logo.png" alt="SpicyQuote" width="34" height="34">
-			<span>SpicyQuote — fares with a kick.</span>
+			<img src="/logo.png" alt="SpicyTools" width="34" height="34">
+			<span>SpicyTools — fares with a kick.</span>
 		</div>
 		<p class="footer__note">
 			The deal feed is sample data shipped with the repository — swap it for your own fare
@@ -153,7 +196,7 @@
 		</p>
 	</footer>
 
-	<script src="/widget/spicyquote.min.js"></script>
+	<script src="/widget/spicytools.min.js"></script>
 	<script src="/app.js"></script>
 </body>
 </html>

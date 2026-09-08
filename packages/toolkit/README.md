@@ -1,11 +1,11 @@
-> **Part of [SpicyQuote](https://github.com/Adhambadrun/SpicyQuote) — fares with a kick.**
+> **Part of [SpicyTools](https://github.com/Adhambadrun/SpicyQuote) — fares with a kick.**
 >
-> This directory is SpicyQuote's **knowledge layer**. It is a vendored copy of the
+> This directory is SpicyTools's **knowledge layer**. It is a vendored copy of the
 > [Travel Hacking Toolkit](https://github.com/borski/travel-hacking-toolkit) by Michael Borohovski
-> (MIT), kept verbatim so upstream improvements stay easy to merge. SpicyQuote does not fork its
+> (MIT), kept verbatim so upstream improvements stay easy to merge. SpicyTools does not fork its
 > skills — it reads its **data**: `packages/mcp` exposes `data/*.json` as MCP tools, so an agent can
 > answer "which program should I transfer points to?" without leaving the conversation.
-> See [SPICYQUOTE.md](./SPICYQUOTE.md).
+> See [SPICYTOOLS.md](./SPICYTOOLS.md).
 >
 > Everything below is upstream documentation, left as-is.
 

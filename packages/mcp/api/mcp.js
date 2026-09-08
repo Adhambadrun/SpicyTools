@@ -1,4 +1,4 @@
-// api/mcp.js — the SpicyQuote MCP endpoint.
+// api/mcp.js — the SpicyTools MCP endpoint.
 //
 // The fare tools and the travel-hacking dataset are entirely local and public:
 // they read JSON bundled with the repo (or do arithmetic), so there is no
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const server = new McpServer({ name: 'spicyquote', version: '1.0.0' });
+  const server = new McpServer({ name: 'spicytools', version: '1.0.0' });
   registerTools(server);
 
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });

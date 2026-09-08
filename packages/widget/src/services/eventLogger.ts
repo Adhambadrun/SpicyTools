@@ -10,7 +10,7 @@ export enum SearchFormEvent {
 	DealApplied = 'deal.applied'
 }
 
-const eventPrefix = 'analytics.spicyquote.';
+const eventPrefix = 'analytics.spicytools.';
 
 export const eventTap = (event: string, value: any = null) => {
 	document.dispatchEvent(new CustomEvent(eventPrefix + event, {

@@ -1,13 +1,13 @@
-# The toolkit inside SpicyQuote
+# The toolkit inside SpicyTools
 
-SpicyQuote answers two questions: **is this fare hot?** and **what is the smartest way to pay for it?**
+SpicyTools answers two questions: **is this fare hot?** and **what is the smartest way to pay for it?**
 The first one is arithmetic (see the [heat scale](#heat-scale)). The second one needs knowledge —
 which program to transfer to, who charges fuel surcharges, which award can be held while the points
 land. That knowledge is what this directory provides.
 
-## What SpicyQuote takes from it
+## What SpicyTools takes from it
 
-SpicyQuote does **not** re-ship the skills, agents, hooks or Docker images. It takes the
+SpicyTools does **not** re-ship the skills, agents, hooks or Docker images. It takes the
 **data** — nine JSON files in `data/` — and serves them as MCP tools from `packages/mcp`:
 
 | Dataset | MCP tool | What it answers |
@@ -53,4 +53,4 @@ This directory is a verbatim vendored copy of
 [borski/travel-hacking-toolkit](https://github.com/borski/travel-hacking-toolkit) by Michael
 Borohovski, MIT licensed. Skill names, plugin manifests and upstream links are deliberately left
 untouched so upstream changes can be merged cleanly. If you are improving award data, contribute it
-upstream — SpicyQuote picks it up on the next sync.
+upstream — SpicyTools picks it up on the next sync.

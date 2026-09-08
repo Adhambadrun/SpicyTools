@@ -1,12 +1,12 @@
 {
-  "name": "@spicyquote/widget",
+  "name": "@spicytools/widget",
   "version": "1.0.0",
-  "description": "SpicyQuote search widget — lightweight flight deal search form with spice-level fare heat",
-  "main": "dist/spicyquote.min.js",
-  "style": "dist/spicyquote.min.css",
+  "description": "SpicyTools search widget — lightweight flight deal search form with spice-level fare heat",
+  "main": "dist/spicytools.min.js",
+  "style": "dist/spicytools.min.css",
   "types": "index.d.ts",
   "license": "MIT",
-  "author": "SpicyQuote",
+  "author": "SpicyTools",
   "homepage": "https://github.com/Adhambadrun/SpicyQuote#readme",
   "repository": {
     "type": "git",
@@ -112,11 +112,11 @@
       "**/__tests__/*.+(ts|tsx|js)"
     ],
     "moduleNameMapper": {
-      "^@spicyquote/react-datepicker$": [
+      "^@spicytools/react-datepicker$": [
         "<rootDir>/node_modules/react-datepicker",
         "<rootDir>/../../node_modules/react-datepicker"
       ],
-      "^@spicyquote/react-select$": [
+      "^@spicytools/react-select$": [
         "<rootDir>/node_modules/react-select",
         "<rootDir>/../../node_modules/react-select"
       ]

@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "SpicyQuote seed deal feed. Every entry is a fare the widget can load into the search form and run.",
+    "description": "SpicyTools seed deal feed. Every entry is a fare the widget can load into the search form and run.",
     "disclaimer": "SAMPLE DATA. These fares ship with the repository so the tools and the widget have something to chew on. They are not live quotes and must not be shown to users as real availability — replace this file (or point the server at your fare feed) before going live. See packages/mcp/README.md.",
     "source": "seed",
     "last_updated": "2026-09-08",

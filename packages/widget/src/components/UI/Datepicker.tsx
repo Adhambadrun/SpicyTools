@@ -2,7 +2,7 @@ import * as React from 'react';
 import * as classnames from 'classnames';
 import { FormEvent } from 'react';
 import { Moment } from 'moment';
-import DatePicker, { ReactDatePickerProps } from '@spicyquote/react-datepicker';
+import DatePicker, { ReactDatePickerProps } from '@spicytools/react-datepicker';
 
 import Tooltip from './Tooltip';
 import { isIE } from '../../utils';

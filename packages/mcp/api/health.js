@@ -18,7 +18,7 @@ function dealsLoaded() {
 export default function handler(req, res) {
   res.status(200).json({
     ok: true,
-    service: 'spicyquote-mcp',
+    service: 'spicytools-mcp',
     upstream: BASE_URL_FOR_HEALTH,
     dealsInFeed: dealsLoaded(),
     dealFeedUpdated: metaOf(loadDataset('hot-deals', 'own')).last_updated || null,
