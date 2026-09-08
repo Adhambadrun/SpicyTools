@@ -230,8 +230,6 @@ async function boot() {
     copyText(new URL('/bcf-widget.user.js', window.location.href).href, $('copy-bcf'))
   );
 
-  applyDeepLink();
-
   // The widget: same feed, top fares only, search handled in-page.
   window.SpicyQuote.init({
     rootElement: $('search-root'),
@@ -262,6 +260,9 @@ async function boot() {
       payload.hidden = false;
     },
   });
+
+  // Deep links from the BCF widget land here — now that the widget is up.
+  applyDeepLink();
 }
 
 $('filter-from').addEventListener('change', (event) => {
