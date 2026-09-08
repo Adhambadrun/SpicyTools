@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.AdhamBadrun/spicyquote-mcp",
+  "description": "SpicyQuote — rate how hot a fare is, search the deal feed, and query a travel-hacking dataset (award sweet spots, transfer partners, point valuations, award holds, stopovers, status matches, round-the-world awards, alliances) plus LLM-ready web search and URL-to-clean-text fetch.",
+  "version": "1.0.0",
+  "websiteUrl": "https://github.com/Adhambadrun/SpicyQuote",
+  "repository": {
+    "url": "https://github.com/Adhambadrun/SpicyQuote",
+    "source": "github",
+    "id": "1360905520"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://spicyquote-mcp.vercel.app/mcp"
+    }
+  ]
+}

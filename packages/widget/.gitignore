@@ -1,0 +1,11 @@
+node_modules
+.idea
+/npm-debug.log
+nbproject
+
+# Build output
+dist/demo.min.js
+dist/demo.min.js.LICENSE.txt
+dist/spicyquote.min.css
+dist/spicyquote.min.js
+dist/spicyquote.min.js.LICENSE.txt

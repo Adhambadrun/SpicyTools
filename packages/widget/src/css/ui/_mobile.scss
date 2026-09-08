@@ -1,0 +1,55 @@
+@import "../variables";
+
+.widget-ui-mobile {
+	&__header {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 12;
+
+		color: $title-color;
+		font-weight: 600;
+		font-size: 15px;
+		text-align: center;
+
+		@include adaptivity(phone) {
+			background: $title-color;
+			color: $text-inverse;
+			font-size: 17px;
+
+			position: fixed;
+			height: $mobile-header-height;
+			line-height: $mobile-header-height;
+		}
+	}
+
+	&__back {
+		display: none;
+		position: absolute;
+		color: $text-inverse;
+		font-weight: normal;
+		font-size: 11px;
+		cursor: pointer;
+
+		left: $main-padding-size;
+		height: $mobile-header-height;
+		width: 50px;
+		line-height: $mobile-header-height;
+
+		&:after {
+			content: $icon-arrow;
+			transform: rotate(180deg);
+			position: absolute;
+			left: 0;
+		}
+
+		@include adaptivity(phone) {
+			display: block;
+		}
+	}
+
+	&__title {
+		display: inline-block;
+	}
+}

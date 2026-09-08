@@ -1,0 +1,31 @@
+@import "../variables";
+
+.widget-ui-dropdown {
+	&__content {
+		&_hidden {
+			display: none;
+		}
+	}
+
+	.widget-ui-select {
+		&__toggle {
+			&::after {
+				transition: transform 0.15s ease-in-out;
+			}
+		}
+	}
+
+	&__trigger {
+		&_open {
+			.widget-ui-select {
+				&__toggle {
+					background-image: linear-gradient(to top, rgba($surface-2, 0.9), rgba($surface-2, 0.6));
+
+					&::after {
+						transform: translateY(-1px) rotate(180deg);
+					}
+				}
+			}
+		}
+	}
+}

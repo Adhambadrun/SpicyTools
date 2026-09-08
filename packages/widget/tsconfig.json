@@ -1,0 +1,39 @@
+{
+	"compilerOptions": {
+		"outDir": "./dist/",
+		"experimentalDecorators": true,
+		"noImplicitAny": true,
+		"module": "commonjs",
+		"target": "es5",
+		"jsx": "react",
+		"allowJs": true,
+		"baseUrl": ".",
+		"paths": {
+			"@spicyquote/react-datepicker": [
+				"node_modules/@nemo.travel/react-datepicker",
+				"../../node_modules/@nemo.travel/react-datepicker"
+			],
+			"@spicyquote/react-select": [
+				"node_modules/@nemo.travel/react-select",
+				"../../node_modules/@nemo.travel/react-select"
+			]
+		},
+		"lib": [
+			"es2015",
+			"ES2016",
+			"DOM"
+		],
+		"skipLibCheck": true,
+		"types": [
+			"jest",
+			"node"
+		]
+	},
+	"exclude": [
+		"node_modules",
+		"**/__tests__/*"
+	],
+	"include": [
+		"./src/**/*"
+	]
+}

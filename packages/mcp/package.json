@@ -1,0 +1,24 @@
+{
+  "name": "@spicyquote/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SpicyQuote MCP server — spicy fare search, travel-hacking data and LLM-ready web tools (SERP, instant answers, URL → clean text) exposed as MCP tools for Claude, ChatGPT and any MCP client.",
+  "main": "api/mcp.js",
+  "license": "MIT",
+  "author": "SpicyQuote",
+  "homepage": "https://github.com/Adhambadrun/SpicyQuote#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adhambadrun/SpicyQuote.git"
+  },
+  "scripts": {
+    "dev": "node local-server.js",
+    "start": "node local-server.js",
+    "smoke": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  }
+}

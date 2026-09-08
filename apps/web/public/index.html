@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>SpicyQuote — fares with a kick</title>
+	<meta name="description" content="SpicyQuote finds fares with a kick: an embeddable flight search widget with a heat-rated deal feed, plus an MCP server that lets agents hunt hot fares for you.">
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌶️</text></svg>">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="/widget/spicyquote.min.css">
+	<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+	<header class="topbar">
+		<a class="brand" href="/">
+			<img class="brand__mark" src="/logo.png" alt="SpicyQuote">
+			<span class="brand__name">Spicy<em>Quote</em></span>
+		</a>
+
+		<nav class="topbar__nav">
+			<a href="#search">Search</a>
+			<a href="#board">Spice board</a>
+			<a href="#agent">For agents</a>
+			<a class="pill" href="https://github.com/Adhambadrun/SpicyQuote" target="_blank" rel="noopener">GitHub</a>
+		</nav>
+	</header>
+
+	<main>
+		<section class="hero">
+			<p class="hero__kicker">🌶️ Fares with a kick</p>
+			<h1 class="hero__title">Stop scrolling.<br>Start <span class="grad">booking hot fares</span>.</h1>
+			<p class="hero__sub">
+				SpicyQuote rates every fare on a four-chilli heat scale, drops the hottest ones into a
+				search you can finish in one tap, and exposes the whole thing to AI agents over MCP.
+			</p>
+
+			<dl class="hero__stats">
+				<div><dt id="stat-deals">—</dt><dd>fares in the feed</dd></div>
+				<div><dt id="stat-tools">—</dt><dd>MCP tools</dd></div>
+				<div><dt id="stat-data">—</dt><dd>travel-hacking datasets</dd></div>
+			</dl>
+		</section>
+
+		<section id="search" class="panel">
+			<div class="panel__head">
+				<h2>Search</h2>
+				<p>The SpicyQuote widget. Pick a route — or tap a fare from the spice rack above the form and it fills itself in.</p>
+			</div>
+
+			<div id="search-root" class="search-root"></div>
+
+			<div id="search-payload" class="payload" hidden>
+				<div class="payload__head">
+					<span class="payload__dot"></span>
+					<strong>Last search</strong>
+					<span class="payload__note">handled in-page by <code>onSearch</code> instead of navigating away</span>
+				</div>
+				<pre id="search-payload-body"></pre>
+			</div>
+		</section>
+
+		<section id="board" class="panel">
+			<div class="panel__head">
+				<h2>Spice board</h2>
+				<p>Every fare in the feed, hottest first. Hit <em>Load &amp; search</em> and watch the form above fill itself in.</p>
+			</div>
+
+			<div class="filters">
+				<label>
+					<span>From</span>
+					<select id="filter-from"><option value="">Anywhere</option></select>
+				</label>
+				<label>
+					<span>Minimum heat</span>
+					<select id="filter-heat">
+						<option value="">Anything</option>
+						<option value="medium">🌶🌶 Medium +</option>
+						<option value="hot">🌶🌶🌶 Hot +</option>
+						<option value="inferno">🌶🌶🌶🌶 Inferno</option>
+					</select>
+				</label>
+				<p class="filters__count" id="board-count"></p>
+			</div>
+
+			<div id="board-grid" class="board"></div>
+
+			<p class="disclaimer" id="board-disclaimer"></p>
+		</section>
+
+		<section id="agent" class="panel">
+			<div class="panel__head">
+				<h2>For agents</h2>
+				<p>
+					The same heat model, exposed as an MCP server. Point Claude, ChatGPT, Cursor or any
+					MCP client at <code>/mcp</code> and it can rate fares, hunt the deal feed and query
+					the travel-hacking dataset.
+				</p>
+			</div>
+
+			<div class="endpoint">
+				<code id="mcp-endpoint">/mcp</code>
+				<button class="btn-ghost" id="copy-endpoint" type="button">Copy</button>
+			</div>
+
+			<div id="tools-grid" class="tools"></div>
+		</section>
+
+		<section class="panel">
+			<div class="panel__head">
+				<h2>Knowledge</h2>
+				<p>Travel-hacking data shipped with the repo and served through the MCP tools.</p>
+			</div>
+
+			<div id="datasets" class="datasets"></div>
+		</section>
+	</main>
+
+	<footer class="footer">
+		<div class="footer__brand">
+			<img src="/logo.png" alt="SpicyQuote" width="34" height="34">
+			<span>SpicyQuote — fares with a kick.</span>
+		</div>
+		<p class="footer__note">
+			The deal feed is sample data shipped with the repository — swap it for your own fare
+			feed before showing it to real travellers.
+		</p>
+	</footer>
+
+	<script src="/widget/spicyquote.min.js"></script>
+	<script src="/app.js"></script>
+</body>
+</html>
