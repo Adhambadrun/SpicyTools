@@ -5,6 +5,7 @@ import { ApplicationState, FormState } from '../../../../state';
 import { Moment } from 'moment';
 import { isCR, getForm, isRT } from '../../selectors';
 import { AvailableDateResponse } from '../../../../services/responses/AvailableDates';
+import { calendarHeat } from '../../../../services/spicytool';
 
 const getReturnDate = (state: ApplicationState): Moment => isRT(state) ? state.form.segments[1].departureDate.date : null;
 const getReturnAvailableDates = (state: ApplicationState): any => state.form.segments[0].returnDate ? state.form.segments[0].returnDate.availableDates : [];
@@ -84,6 +85,20 @@ const createHighlightedDates = (availableDates: any, intermediateDates: Moment[]
 		result.push({
 			'react-datepicker__day--hasFlight': availableDates.map(({ date }: any) => moment(date))
 		});
+
+		// SpicyTool prices its calendar, so the cheap days can be graded on the
+		// heat scale instead of only being marked "there is a flight".
+		const heat = calendarHeat(availableDates);
+		const groups: HighlightedDatesGroup = {};
+
+		Object.keys(heat).forEach(date => {
+			const className = `react-datepicker__day--${heat[date].heat}`;
+
+			groups[className] = groups[className] || [];
+			groups[className].push(moment(date));
+		});
+
+		Object.keys(groups).forEach(className => result.push({ [className]: groups[className] }));
 	}
 
 	if (intermediateDates.length) {

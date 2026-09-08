@@ -15,6 +15,7 @@ import {
 	segmentState, PassengersState
 } from '../../state';
 import { URL, clearURL } from '../../utils';
+import { searchURL, toSpicyToolCabin } from '../../services/spicytool';
 import { setSegments } from './segments/actions';
 import { setClassType } from './additional/actions';
 import { setRouteTypeAction } from './route/actions';
@@ -88,7 +89,51 @@ export const spicyFastSearchPassengers = (passengers: PassengersState): string =
 	return passengersInfo;
 };
 
+/**
+ * Total number of seats the search should be run for.
+ */
+const totalPassengers = (passengers: PassengersState): number => {
+	let total = 0;
+
+	for (const passType in passengers) {
+		if (passengers.hasOwnProperty(passType) && passengers[passType].count) {
+			total += passengers[passType].count;
+		}
+	}
+
+	return total || 1;
+};
+
+/**
+ * Build the SpicyTool search request for the current form state.
+ *
+ * This is the interface to the search engine: `GET {apiBase}/api/v2/search`
+ * with the query the visitor filled in. The host page normally intercepts this
+ * through the `onSearch` callback and renders the results itself.
+ */
+export const spicyToolSearchURL = (state: ApplicationState): string => {
+	const segments = state.form.segments;
+	const firstSegment = segments[0];
+
+	return searchURL(clearURL(state.system.spicyURL), {
+		origin: firstSegment.autocomplete.departure.airport.IATA,
+		destination: firstSegment.autocomplete.arrival.airport.IATA,
+		date: firstSegment.departureDate.date.format('YYYY-MM-DD'),
+		cabin: toSpicyToolCabin(state.form.additional.classType),
+		passengers: totalPassengers(state.form.passengers),
+		returnDate: isSearchRT(state) && segments[1].departureDate.date ? segments[1].departureDate.date.format('YYYY-MM-DD') : undefined,
+		returnFlex: state.form.additional.vicinityDates ? state.system.vicinityDays : undefined,
+		maxStops: state.form.additional.directFlight ? 0 : undefined
+	});
+};
+
 export const spicyFastSearch = (state: ApplicationState, isAWP?: boolean): string => {
+	// SpicyTool mode builds a real search request against the API. The legacy
+	// fast-search string below is only used by the Websky integration.
+	if (state.system.mode !== ApplicationMode.WEBSKY) {
+		return spicyToolSearchURL(state);
+	}
+
 	let requestURL = clearURL(state.system.spicyURL) + (isAWP ? '/#/results/' : '/results/');
 	const segments = state.form.segments;
 
@@ -126,10 +171,12 @@ export const spicyFastSearch = (state: ApplicationState, isAWP?: boolean): strin
 };
 
 export const runSpicySearch = (state: ApplicationState, isAWP?: boolean): void => {
-	const url = URL(spicyFastSearch(state, isAWP), {
-		changelang: getLocaleForApi(state),
-		...state.system.utm
-	});
+	const url = state.system.mode === ApplicationMode.WEBSKY
+		? URL(spicyFastSearch(state, isAWP), {
+			changelang: getLocaleForApi(state),
+			...state.system.utm
+		})
+		: URL(spicyToolSearchURL(state), state.system.utm);
 
 	if (state.system.openNewTab) {
 		const link = document.createElement('a');

@@ -30,11 +30,12 @@ module.exports = {
 		],
 		extensions: ['.ts', '.js', '.json', '.tsx', '.css', '.scss'],
 		alias: {
-			// The datepicker / select are upstream React ports. They are consumed
-			// through SpicyQuote-owned specifiers so our source stays brand-clean
-			// and the dependency can be swapped in one place.
-			'@spicyquote/react-datepicker': '@nemo.travel/react-datepicker',
-			'@spicyquote/react-select': '@nemo.travel/react-select'
+			// The datepicker and select are consumed through SpicyQuote-owned
+			// specifiers so the underlying library can be swapped in one place.
+			// They point at the upstream originals — the Nemo-branded forks of
+			// these libraries were dropped along with every other Nemo dependency.
+			'@spicyquote/react-datepicker': 'react-datepicker',
+			'@spicyquote/react-select': 'react-select'
 		}
 	},
 	module: {

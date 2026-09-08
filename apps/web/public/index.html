@@ -107,6 +107,31 @@
 			<div id="tools-grid" class="tools"></div>
 		</section>
 
+		<section id="bcf" class="panel">
+			<div class="panel__head">
+				<h2>BCF floating widget</h2>
+				<p>
+					The agent-side companion: a floating search panel for
+					<code>bo.bcflights.com</code>. It detects the lead you are looking at and opens
+					it in Kayak, Google Flights, ITA Matrix (including mixed-cabin and the ELR/YVR
+					trick), PointsYeah or SpicyQuote — plus Sabre Fast Search, the VIP itinerary
+					maker, the GK converter and the PNR how-to. Every fare on the board above
+					offers the same links, built by the same module.
+				</p>
+			</div>
+
+			<div class="endpoint">
+				<code id="bcf-endpoint">/bcf-widget.user.js</code>
+				<button class="btn-ghost" id="copy-bcf" type="button">Copy install URL</button>
+			</div>
+
+			<ul class="bullets">
+				<li>Install it in Tampermonkey / Violentmonkey, then open any lead on Bo.BCFlights.com.</li>
+				<li>Drag the panel by its header, collapse it to the pepper bubble, hit ⟳ to re-detect.</li>
+				<li>Rebuild it after editing the sources: <code>npm run build --workspace @spicyquote/bcf-widget</code>.</li>
+			</ul>
+		</section>
+
 		<section class="panel">
 			<div class="panel__head">
 				<h2>Knowledge</h2>

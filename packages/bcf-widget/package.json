@@ -1,0 +1,18 @@
+{
+  "name": "@spicyquote/bcf-widget",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BCF Floating Flight Search Widget \u2014 a SpicyQuote-powered floating search helper for Bo.BCFlights.com: lead detection, Kayak / Google Flights / ITA Matrix / PointsYeah / SpicyQuote deep links, Sabre Fast Search and the agent tool kit.",
+  "main": "src/flight-links.js",
+  "exports": {
+    ".": "./src/flight-links.js",
+    "./userscript": "./dist/bcf-floating-flight-search-widget.user.js"
+  },
+  "license": "MIT",
+  "author": "SpicyQuote",
+  "homepage": "https://github.com/Adhambadrun/SpicyQuote#readme",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

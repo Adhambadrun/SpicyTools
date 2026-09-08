@@ -80,6 +80,12 @@ export const cacheState = (state: ApplicationState): void => {
  * @returns {Store}
  */
 export const getStore = (config: SystemState): Store<ApplicationState> => {
+	// `apiBase` is the documented way to point the widget at a SpicyTool API.
+	// `spicyURL` is its deprecated alias — accept either, prefer `apiBase`.
+	if (!config.spicyURL && config.apiBase) {
+		config.spicyURL = config.apiBase;
+	}
+
 	// Convert airports black list from array to a set of unique values.
 	if (config.airportsBlackList) {
 		config.airportsBlackList = config.airportsBlackList instanceof Array ? new Set<string>(config.airportsBlackList) : undefined;

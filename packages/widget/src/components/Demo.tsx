@@ -16,8 +16,8 @@ interface DemoFormState {
 
 const defaultLang = Language.Russian;
 const defaultWebskyURL = 'http://demo.websky.aero/gru';
-// Public demo fare API used by the playground — point `spicyURL` at your own.
-const defaultSpicyURL = 'https://geodata.nemo.travel';
+// SpicyTool API used by the playground — point `apiBase` at your own.
+const defaultSpicyURL = 'https://api.spicyquote.app';
 
 export default class Demo extends React.Component<any, DemoFormState> {
 	config: SystemState = {
@@ -125,7 +125,7 @@ export default class Demo extends React.Component<any, DemoFormState> {
 								<CodeBlock>spicyURL</CodeBlock>: URL of the fare API
 							</div>
 
-							<input type="text" className="form-control" value={this.state.spicyURL} placeholder="https://geodata.nemo.travel" onChange={e => {
+							<input type="text" className="form-control" value={this.state.spicyURL} placeholder="https://api.spicyquote.app" onChange={e => {
 								this.config.spicyURL = e.target.value;
 								this.setState({
 									spicyURL: e.target.value

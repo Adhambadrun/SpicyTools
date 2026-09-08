@@ -375,6 +375,54 @@ main {
 
 .off { font-weight: 700; }
 
+/* Where else to take the fare — same builders as the BCF floating widget. */
+.card__links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid var(--smoke-600);
+}
+
+.card__link {
+	padding: 4px 9px;
+	border: 1px solid var(--smoke-500);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--ash);
+	font: inherit;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-decoration: none;
+	cursor: pointer;
+	transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.card__link:hover {
+	color: var(--bone);
+	border-color: var(--ember);
+	background: rgba(255, 122, 0, 0.1);
+}
+
+.card__link-copied {
+	color: var(--heat-hot);
+	border-color: var(--heat-hot);
+}
+
+.bullets {
+	margin-top: 16px;
+	padding-left: 20px;
+	color: var(--ash);
+	font-size: 13px;
+	line-height: 1.7;
+}
+
+.bullets code {
+	color: var(--bone);
+}
+
 .btn {
 	padding: 8px 14px;
 	border: none;

@@ -54,6 +54,9 @@ export interface PassengersConfig {
 
 export interface SystemState {
 	rootElement?: HTMLElement;
+	/** Base URL of the SpicyTool API, e.g. `https://search.example.com`. */
+	apiBase?: string;
+	/** @deprecated Use `apiBase`. */
 	spicyURL?: string;
 	fallbackSpicyURL?: string;
 	webskyURL?: string;

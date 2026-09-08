@@ -84,6 +84,9 @@ export type GetStateFunction = () => ApplicationState;
 
 export interface SystemState {
 	rootElement?: HTMLElement;
+	/** Base URL of the SpicyTool API, e.g. `https://search.example.com`. */
+	apiBase?: string;
+	/** @deprecated Use `apiBase`. Kept so existing embeds keep working. */
 	spicyURL?: string;
 	fallbackSpicyURL?: string;
 	webskyURL?: string;
@@ -130,6 +133,7 @@ export interface SystemState {
 export const systemState: SystemState = {
 	rootElement: null,
 	webskyURL: '',
+	apiBase: '',
 	spicyURL: '',
 	routingGrid: null,
 	locale: Language.English,

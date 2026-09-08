@@ -199,7 +199,7 @@ export default class Autocomplete extends React.Component<Props, State> {
 						placeholder={this.placeholder}
 						onChange={this.selectOption}
 						onFocus={this.onFocusHandler}
-						filterOptions={this.props.isGridMode ? undefined : options => options}
+						filterOptions={this.props.isGridMode ? undefined : (options: any) => options}
 						onBlur={() => {
 							this.props.changeAutocompleteSuggestions([], this.type, segmentId);
 							this.setState({ isFocused: false });

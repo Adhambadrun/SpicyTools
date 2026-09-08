@@ -19,6 +19,10 @@ import { Airport } from '../../../../services/models/Airport';
 import { ResponseWithGuide } from '../../../../services/responses/Guide';
 import { getLocaleForApi, isCR, isRT } from '../../selectors';
 import { parseAirport } from '../../../../services/parsers/airport';
+import { airportsURL, calendarURL, parseSpicyToolCalendar, toSpicyToolCabin } from '../../../../services/spicytool';
+import { AvailableDateResponse } from '../../../../services/responses/AvailableDates';
+import * as moment from 'moment';
+import spicyToolAirports from '../../../../services/requests/airports';
 
 export interface AutocompleteAction {
 	type: string;
@@ -120,9 +124,7 @@ const runDatesAvailability = (
 
 	let urlBase = '/api/';
 
-	if (state.system.mode === ApplicationMode.SPICY) {
-		urlBase += `flights/availability/schedule/${depIATA}/${arrIATA}/withTransfers`;
-	} else if (state.system.mode === ApplicationMode.WEBSKY) {
+	if (state.system.mode === ApplicationMode.WEBSKY) {
 		urlBase += `proxy/websky/availability/dep/${depIATA}/arr/${arrIATA}`;
 	}
 
@@ -130,23 +132,38 @@ const runDatesAvailability = (
 		webskyURL: encodeURIComponent(state.system.webskyURL)
 	} : {};
 
-	fetchWithFallback({
-		url: URL(`${clearURL(state.system.spicyURL)}${urlBase}`, requestParams),
-		fallbackURL: state.system.fallbackSpicyURL ? URL(`${clearURL(state.system.fallbackSpicyURL)}${urlBase}`, requestParams) : undefined
-	})
-		.then(response => response.json())
-		.then(response => {
-			const dates = parseDatesAvailability(response);
+	const runRequest = (base: string, parser: (response: any) => AvailableDateResponse[]) => {
+		return fetchWithFallback({ url: base })
+			.then(response => response.json())
+			.then(response => {
+				const dates = parser(response);
 
-			if (dates) {
-				dispatch(setAvailableDates(dates, segmentId, dateType));
-			} else {
+				if (dates) {
+					dispatch(setAvailableDates(dates, segmentId, dateType));
+				} else {
+					dispatch(setAvailableDates([], segmentId, dateType));
+				}
+			})
+			.catch(() => {
 				dispatch(setAvailableDates([], segmentId, dateType));
-			}
-		})
-		.catch(() => {
-			dispatch(setAvailableDates([], segmentId, dateType));
-		});
+			});
+	};
+
+	if (state.system.mode === ApplicationMode.WEBSKY) {
+		// Websky keeps its own availability endpoint and response envelope.
+		runRequest(URL(`${clearURL(state.system.spicyURL)}${urlBase}`, requestParams), parseDatesAvailability);
+	} else if (depIATA && arrIATA) {
+		// SpicyTool: cheapest award per day, priced in points.
+		const calendarParams = {
+			origin: depIATA,
+			destination: arrIATA,
+			startDate: moment().format('YYYY-MM-DD'),
+			days: 30,
+			cabin: toSpicyToolCabin(state.form.additional.classType)
+		};
+
+		runRequest(calendarURL(clearURL(state.system.spicyURL), calendarParams), parseSpicyToolCalendar);
+	}
 };
 
 /**
@@ -332,14 +349,16 @@ export const loadAirportForAutocomplete = (IATA: string, autocompleteType: Autoc
 		const state = getState();
 		const { spicyURL, fallbackSpicyURL, customAirportNames } = state.system;
 		const locale = getLocaleForApi(state);
-		const urlBase = `/api/guide/airports/${IATA}?apilang=${locale}`;
-
-		fetchWithFallback({
-			url: `${spicyURL}${urlBase}`,
-			fallbackURL: fallbackSpicyURL ? `${fallbackSpicyURL}${urlBase}` : undefined
-		})
-			.then((response: Response) => response.json())
-			.then((response: ResponseWithGuide) => dispatch(setSelectedAirport(parseAirport({ IATA }, response.guide, customAirportNames[IATA], locale), autocompleteType)));
+		spicyToolAirports(
+			airportsURL(spicyURL, IATA, 1),
+			{ customAirportNames, locale },
+			fallbackSpicyURL ? airportsURL(fallbackSpicyURL, IATA, 1) : undefined
+		)
+			.then(suggestions => {
+				if (suggestions.length) {
+					dispatch(setSelectedAirport(suggestions[0].airport, autocompleteType));
+				}
+			});
 	};
 };
 
@@ -354,14 +373,10 @@ export const loadNearestAirportForAutocomplete = (autocompleteType: Autocomplete
 		const state = getState();
 		const { spicyURL, fallbackSpicyURL, customAirportNames } = state.system;
 		const locale = getLocaleForApi(state);
-		const urlBase = `/api/guide/airports/nearest?apilang=${locale}`;
-
-		fetchWithFallback({
-			url: `${spicyURL}${urlBase}`,
-			fallbackURL: fallbackSpicyURL ? `${fallbackSpicyURL}${urlBase}` : undefined
-		})
-			.then(response => response.json())
-			.then(response => dispatch(setSelectedAirport(parseNearestAirport(response, customAirportNames, locale), autocompleteType)));
+		// SpicyTool exposes no IP-geolocation endpoint, and guessing an airport
+		// from an IP would put the wrong city in the form — so this is a no-op
+		// rather than a fabricated suggestion. Use `defaultDepartureAirport`.
+		console.warn('[SpicyQuote] `useNearestAirport` needs an IP-geolocation endpoint, which SpicyTool does not provide. Set `defaultDepartureAirport` instead.');
 	};
 };
 

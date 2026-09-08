@@ -15,3 +15,9 @@ packages/widget/dist/demo.min.js.LICENSE.txt
 .vscode
 .DS_Store
 *.log
+
+# BCF widget build output
+packages/bcf-widget/dist/
+
+# Upload artifacts (unpacked into packages/)
+*.zip

@@ -9,18 +9,35 @@ import {
 	startAutocompleteLoading
 } from './actions';
 import autocomplete from '../../../../services/requests/autocomplete';
+import spicyToolAirports from '../../../../services/requests/airports';
+import { airportsURL } from '../../../../services/spicytool';
 import { setAutocompleteSuggestionsForGrid } from '../../gridAutocomplete/actions';
 import { clearURL, URL } from '../../../../utils';
 import { getConfig, getLocaleForApi, getSegments } from '../../selectors';
 import { AutocompleteSuggestion } from '../../../../services/models/AutocompleteSuggestion';
 
 interface AutocompleteRequestParams {
-	apilang: Language;
+	apilang?: Language;
 	webskyURL?: string;
 	airlineIATA?: string;
+	q?: string;
+	limit?: number;
 }
 
-function* runAutocomplete(requestURL: string, autocompleteType: AutocompleteFieldType, segmentId = 0, departureIATA = '', fallbackURL?: string) {
+type AutocompleteRequest = (
+	requestURL: string,
+	params: any,
+	fallbackURL?: string
+) => Promise<AutocompleteSuggestion[]>;
+
+function* runAutocomplete(
+	requestURL: string,
+	autocompleteType: AutocompleteFieldType,
+	segmentId = 0,
+	departureIATA = '',
+	fallbackURL?: string,
+	request: AutocompleteRequest = autocomplete
+) {
 	const {
 		citiesOnly,
 		customAirportNames,
@@ -33,7 +50,7 @@ function* runAutocomplete(requestURL: string, autocompleteType: AutocompleteFiel
 	yield put(startAutocompleteLoading(autocompleteType, segmentId));
 
 	try {
-		const options: AutocompleteSuggestion[] = yield call(autocomplete, requestURL, {
+		const options: AutocompleteSuggestion[] = yield call(request, requestURL, {
 			citiesOnly, customAirportNames, locale, airportsBlackList: airportsBlackList as Set<string>
 		}, fallbackURL);
 
@@ -77,27 +94,37 @@ function* worker({ payload }: RunAutocompleteAction) {
 		urlBase = `/api/proxy/websky/cities/${departureIATA}/${searchType}`;
 		requestParams.webskyURL = encodeURIComponent(config.webskyURL);
 	} else {
-		urlBase = `/api/guide/autocomplete/iata/${searchText}`;
+		// SpicyTool typeahead: `GET /api/v1/airports?q=&limit=`.
+		urlBase = `/api/v1/airports`;
+		requestParams.q = searchText;
+		requestParams.limit = 8;
 
 		if (autocompleteType === AutocompleteFieldType.Arrival && segments[segmentId].autocomplete.departure.airport) {
 			departureIATA = segments[segmentId].autocomplete.departure.airport.IATA;
-			urlBase += `/dep/${departureIATA}`;
-		}
-
-		if (config.routingGrid) {
-			requestParams.airlineIATA = config.routingGrid;
 		}
 	}
 
 	// Run autocomplete request.
-	yield call(
-		runAutocomplete,
-		URL(`${spicyURL}${urlBase}`, requestParams),
-		autocompleteType,
-		segmentId,
-		departureIATA,
-		fallbackURL ? URL(`${fallbackURL}${urlBase}`, requestParams) : undefined
-	);
+	if (config.mode === ApplicationMode.WEBSKY) {
+		yield call(
+			runAutocomplete,
+			URL(`${spicyURL}${urlBase}`, requestParams),
+			autocompleteType,
+			segmentId,
+			departureIATA,
+			fallbackURL ? URL(`${fallbackURL}${urlBase}`, requestParams) : undefined
+		);
+	} else {
+		yield call(
+			runAutocomplete,
+			airportsURL(spicyURL, searchText),
+			autocompleteType,
+			segmentId,
+			departureIATA,
+			fallbackURL ? airportsURL(fallbackURL, searchText) : undefined,
+			spicyToolAirports
+		);
+	}
 }
 
 export default function* runAutocompleteSaga() {

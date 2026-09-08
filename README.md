@@ -36,6 +36,8 @@ SpicyQuote/
 ├── packages/
 │   ├── widget/          @spicyquote/widget   — the embeddable search form + spice rack
 │   ├── mcp/             @spicyquote/mcp      — 14 MCP tools for agents
+│   ├── bcf-widget/      @spicyquote/bcf-widget — the BCF floating agent panel
+│   ├── spicytool/       the search API contract the widget speaks (vendored)
 │   └── toolkit/         knowledge layer      — travel-hacking data (vendored, MIT)
 └── logo.png
 ```
@@ -45,6 +47,8 @@ SpicyQuote/
 | **`apps/web`** | One Node process serving the site (`/`), the deal API (`/api/deals`), the tool registry (`/api/tools`), dataset stats (`/api/datasets`) and the MCP endpoint (`/mcp`). | [README](./apps/web/README.md) |
 | **`packages/widget`** | React/TypeScript search widget. Embeds anywhere with two files and one `SpicyQuote.init()` call. Owns the spice rack, the heat model and the Smoke & Hot Sauce theme. | [README](./packages/widget/README.md) |
 | **`packages/mcp`** | MCP server (streamable-HTTP). Fare tools, nine travel-hacking dataset tools, and three metered web-research tools. | [README](./packages/mcp/README.md) |
+| **`packages/bcf-widget`** | The BCF Floating Flight Search Widget: a userscript for `bo.bcflights.com` that detects a lead and opens it in Kayak, Google Flights, ITA Matrix, PointsYeah or SpicyQuote — plus Sabre Fast Search and the agent tool kit. Its link builders are reused by the site. | [README](./packages/bcf-widget/README.md) |
+| **`packages/spicytool`** | The search API contract (`/api/v1/*`, `/api/v2/*`) the widget is wired to: airports, priced calendar, award search. Vendored so the interface lives next to the code that implements it. | [README](./packages/spicytool/README.md) |
 | **`packages/toolkit`** | Vendored [Travel Hacking Toolkit](https://github.com/borski/travel-hacking-toolkit) data — sweet spots, transfer partners, valuations, award holds, stopovers, status matches, RTW awards, alliances. | [SPICYQUOTE.md](./packages/toolkit/SPICYQUOTE.md) |
 
 ## Run it
@@ -68,7 +72,7 @@ curl localhost:3000/api/deals | jq '.deals[0]'
 | :- | :- |
 | `npm run dev` | the whole product on `:3000` |
 | `npm run build` | production widget bundle into `packages/widget/dist` |
-| `npm test` | widget unit tests (jest, 77 tests) |
+| `npm test` | widget unit tests (jest, 78) + BCF link-builder tests (node:test, 13) |
 | `npm run smoke` | end-to-end MCP test (initialize → tools/list → tools/call) |
 | `npm run mcp` | the MCP server standalone on `:3900` |
 | `npm run widget:dev` | widget dev server on `:9000` |
@@ -117,6 +121,50 @@ response and every `/api/deals` payload, so nothing downstream can mistake them 
 availability. Replace the file (or point `packages/mcp/lib/dataset.js` at your fare source) before
 real travellers see it.
 
+## The search API the widget speaks
+
+SpicyQuote's data layer is the SpicyTool interface — the same shape whether you run the vendored
+Python backend in `packages/spicytool/` or your own implementation:
+
+| Endpoint | Purpose |
+| :- | :- |
+| `GET /api/v1/airports?q=&limit=` | airport typeahead → flat `[{ code, name, city, country, region }]` |
+| `GET /api/v1/calendar?origin&destination&start_date&days&cabin` | priced calendar → `{ calendar: [{ date, available, points, cash_fees, program, cabin }] }` |
+| `GET /api/v2/search?origin&destination&date&cabin&passengers&max_stops&return_date&return_flex` | the award search the widget's "search" button runs |
+| `GET /api/v1/health`, `GET /api/v2/providers` | health and provider list |
+
+Point the widget at one with `apiBase` (`spicyURL` is the deprecated alias):
+
+```js
+SpicyQuote.init({ rootElement, apiBase: 'https://your-spicytool-host' });
+```
+
+The app in `apps/web` implements the contract too, so the demo runs with no Python backend: it
+proxies `/api/v1/*` and `/api/v2/*` to `SPICYTOOL_API_BASE` when that is set, and otherwise answers
+airports and programs from the local dataset.
+
+Because SpicyTool prices each calendar day, the widget's datepicker grades cheap days on the heat
+scale (`--mild`, `--medium`, `--hot`, `--inferno`) instead of only marking "a flight exists".
+
+## The BCF floating widget
+
+For agents working leads on `bo.bcflights.com`, `packages/bcf-widget` is a Tampermonkey userscript
+that floats over the page: detect the lead, then open it anywhere — Kayak, Google Flights
+(including the ELR/YVR trick), ITA Matrix (mixed-cabin and multi-city), PointsYeah or SpicyQuote —
+and copy the Sabre Fast Search command. It also carries the VIP itinerary maker, GK converter, PNR
+how-to and the disclaimer library.
+
+```bash
+npm run build --workspace @spicyquote/bcf-widget
+# → packages/bcf-widget/dist/bcf-floating-flight-search-widget.user.js
+#   also served by the app at /bcf-widget.user.js
+```
+
+The link builders (`packages/bcf-widget/src/flight-links.js`) have no DOM dependency, so the site
+uses the same code: every fare on the spice board ships with the same outbound links
+(`GET /api/deals/:id/links`), and a `?origin=…&destination=…&date=…` deep link from the BCF panel
+loads straight into the widget.
+
 ## Where this came from
 
 The repository started as three separate uploads:
@@ -130,9 +178,18 @@ The repository started as three separate uploads:
   [borski/travel-hacking-toolkit](https://github.com/borski/travel-hacking-toolkit)); SpicyQuote
   consumes its data through the MCP tools rather than forking its skills.
 
-Both widget dependencies that could not be renamed upstream (`@nemo.travel/react-datepicker`,
-`@nemo.travel/react-select`) are consumed through `@spicyquote/*` aliases, so our source stays
-brand-clean and the swap is one line in `webpack.common.js`.
+Two later uploads joined it:
+
+- `SpicyTool-main.zip` → **`packages/spicytool/`** — the search API. Rather than wrapping it, the
+  widget's data layer was rewired to speak its contract directly (`services/spicytool.ts`), and the
+  app serves the same endpoints.
+- `TBC Floating Flight Search Widget.txt` → **`packages/bcf-widget/`** — ported feature-for-feature
+  with every reference to TBC / `bo.travelbusinessclass.com` replaced by BCF / `bo.bcflights.com`,
+  re-skinned to Smoke & Hot Sauce, and its flybasis leg button re-pointed at SpicyQuote.
+
+The widget's two third-party forks have been dropped entirely: `@spicyquote/react-datepicker` and
+`@spicyquote/react-select` are aliases onto the upstream `react-datepicker` and `react-select`
+packages (one line each in `webpack.common.js`), so the tree carries no vendor-specific deps.
 
 ## CI
 

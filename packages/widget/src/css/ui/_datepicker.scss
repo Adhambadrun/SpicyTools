@@ -313,6 +313,34 @@
 				font-weight: 400;
 			}
 
+			// Heat scale for priced calendars: how much cheaper than the
+			// median day of the month is this one?
+			&--mild {
+				color: $heat-mild;
+				background: rgba($heat-mild, 0.12);
+				border-radius: 0;
+			}
+
+			&--medium {
+				color: $heat-medium;
+				background: rgba($heat-medium, 0.16);
+				border-radius: 0;
+			}
+
+			&--hot {
+				color: $heat-hot;
+				background: rgba($heat-hot, 0.2);
+				border-radius: 0;
+				font-weight: 600;
+			}
+
+			&--inferno {
+				color: $heat-inferno;
+				background: rgba($heat-inferno, 0.26);
+				border-radius: 0;
+				font-weight: 600;
+			}
+
 			&--highlighted {
 				color: $title-color;
 				background: rgba($title-color, 0.1);

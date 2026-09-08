@@ -34,6 +34,38 @@ async function getJSON(url) {
   return res.json();
 }
 
+
+/* A SpicyQuote deep link from the BCF widget (?origin=CAI&destination=JFK&date=…)
+ * lands here: load the route straight into the widget so the agent can price it
+ * in our engine without retyping anything. */
+function applyDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const origin = (params.get('origin') || '').toUpperCase();
+  const destination = (params.get('destination') || '').toUpperCase();
+
+  if (!origin || !destination) return;
+
+  const cabin = params.get('cabin') || 'economy';
+  const deal = {
+    id: `deep-link-${origin}-${destination}`,
+    departure: origin,
+    arrival: destination,
+    departDate: params.get('date') || nextMonth(),
+    label: `From BCF: ${origin} → ${destination}`,
+    cabin: { economy: 'Y', premium: 'W', business: 'B', first: 'F' }[cabin] || 'Y',
+    adults: Number(params.get('passengers')) || 1
+  };
+
+  window.SpicyQuote.applyDeal(deal);
+  document.getElementById('search').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function nextMonth() {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /* --- Spice board --------------------------------------------------------- */
 
 function cardHTML(deal) {
@@ -55,6 +87,8 @@ function cardHTML(deal) {
         ${deal.airline ? `<span class="card__chip">${esc(deal.airline)}</span>` : ''}
       </div>
 
+      <div class="card__links">${linkHTML(deal)}</div>
+
       <div class="card__foot">
         <span class="heat heat_${deal.heat}">
           ${PEPPERS[deal.heat]} ${HEAT_LABEL[deal.heat]}
@@ -63,6 +97,47 @@ function cardHTML(deal) {
         <button class="btn" type="button" data-deal="${esc(deal.id)}">Load &amp; search</button>
       </div>
     </article>`;
+}
+
+/* The BCF floating widget opens a lead in these places; the spice board does
+ * the same for every fare. Links are built server-side from
+ * packages/bcf-widget/src/flight-links.js and shipped with the feed. */
+const LINK_LABELS = [
+  ['kayak', 'Kayak'],
+  ['google', 'Google Flights'],
+  ['matrix', 'ITA Matrix'],
+  ['pointsYeah', 'PointsYeah']
+];
+
+function linkHTML(deal) {
+  const links = deal.links || {};
+  const anchors = LINK_LABELS.filter(([key]) => links[key])
+    .map(
+      ([key, label]) =>
+        `<a class="card__link" href="${esc(links[key])}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`
+    )
+    .join('');
+
+  const copy = links.fastSearch
+    ? `<button class="card__link" type="button" data-copy="${esc(links.fastSearch)}" title="${esc(links.fastSearch)}">Copy GK</button>`
+    : '';
+
+  return anchors + copy;
+}
+
+async function copyText(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.classList.add('card__link-copied');
+    const was = button.textContent;
+    button.textContent = 'Copied ✓';
+    setTimeout(() => {
+      button.classList.remove('card__link-copied');
+      button.textContent = was;
+    }, 1400);
+  } catch (err) {
+    button.textContent = 'Copy failed';
+  }
 }
 
 function renderBoard() {
@@ -90,6 +165,10 @@ function renderBoard() {
         document.getElementById('search').scrollIntoView({ behavior: 'smooth', block: 'start' });
       })
     );
+
+  $('board-grid')
+    .querySelectorAll('button[data-copy]')
+    .forEach((button) => button.addEventListener('click', () => copyText(button.dataset.copy, button)));
 }
 
 /* --- Agent tools + datasets ---------------------------------------------- */
@@ -130,7 +209,7 @@ function renderDatasets(datasets) {
 
 async function boot() {
   const [dealsPayload, toolsPayload, datasetsPayload] = await Promise.all([
-    getJSON('/api/deals'),
+    getJSON('/api/deals?links=1'),
     getJSON('/api/tools'),
     getJSON('/api/datasets'),
   ]);
@@ -147,11 +226,18 @@ async function boot() {
   renderTools(toolsPayload.tools);
   renderDatasets(datasetsPayload.datasets);
 
+  $('copy-bcf').addEventListener('click', () =>
+    copyText(new URL('/bcf-widget.user.js', window.location.href).href, $('copy-bcf'))
+  );
+
+  applyDeepLink();
+
   // The widget: same feed, top fares only, search handled in-page.
   window.SpicyQuote.init({
     rootElement: $('search-root'),
-    spicyURL: 'https://geodata.nemo.travel',
-    fallbackSpicyURL: 'https://sys.nemo.travel',
+    // The SpicyTool-shaped API this very server exposes (see server.mjs).
+    // Point `apiBase` at `https://your-spicytool-host` to use a real backend.
+    apiBase: window.location.origin,
     locale: 'en',
     mode: 'SPICY',
     highlightAvailableDates: true,

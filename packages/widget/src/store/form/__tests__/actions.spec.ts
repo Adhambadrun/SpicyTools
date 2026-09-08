@@ -1,5 +1,5 @@
 import moment = require('moment');
-import { spicyFastSearch, spicyFastSearchPassengers, spicyFastSearchSegment } from '../actions';
+import { spicyFastSearch, spicyFastSearchPassengers, spicyFastSearchSegment, spicyToolSearchURL } from '../actions';
 import { getStore } from '../../../store';
 
 const segment = {
@@ -53,23 +53,43 @@ describe('runSpicySearch', () => {
 		});
 	});
 
-	describe('runSpicySearch', () => {
-		it('should build Fast Search for the default results page', () => {
+	describe('SpicyTool search interface', () => {
+		it('should build a SpicyTool /api/v2/search URL for a one-way trip', () => {
 			const store = getStore(customState),
 				state = store.getState();
 
 			state.form.segments = [segment as any];
 
-			expect(spicyFastSearch(state)).toEqual('http://api.spicyquote.test/results/cMOWaSVO20181201ADT1-class=Economy');
+			expect(spicyFastSearch(state)).toEqual(
+				'http://api.spicyquote.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1'
+			);
 		});
 
-		it('should build Fast Search for AWP results page', () => {
+		it('should carry the return date for a round trip', () => {
 			const store = getStore(customState),
 				state = store.getState();
 
-			state.form.segments = [segment as any];
+			state.form.segments = [segment as any, { ...segment, departureDate: { isActive: true, date: moment('2018-12-09') } } as any];
+			state.form.routeType = 'RT';
 
-			expect(spicyFastSearch(state, true)).toEqual('http://api.spicyquote.test/#/results/MOWSVO20181201ADT1-class=Economy');
+			// `return_flex=0` is the API default, so it is not sent.
+			expect(spicyToolSearchURL(state)).toEqual(
+				'http://api.spicyquote.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1&return_date=2018-12-09'
+			);
+		});
+
+		it('should carry flexible dates and the direct-only filter', () => {
+			const store = getStore(customState),
+				state = store.getState();
+
+			state.form.segments = [segment as any, { ...segment, departureDate: { isActive: true, date: moment('2018-12-09') } } as any];
+			state.form.routeType = 'RT';
+			state.form.additional.vicinityDates = true;
+			state.form.additional.directFlight = true;
+
+			expect(spicyToolSearchURL(state)).toEqual(
+				'http://api.spicyquote.test/api/v2/search?origin=MOW&destination=SVO&date=2018-12-01&cabin=economy&passengers=1&max_stops=0&return_date=2018-12-09&return_flex=3'
+			);
 		});
 	});
 });
