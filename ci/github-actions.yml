@@ -6,8 +6,9 @@
 #
 #   mkdir -p .github/workflows && cp ci/github-actions.yml .github/workflows/ci.yml
 #
-# It builds the widget, runs the widget unit tests, exercises the MCP server
-# end to end, and checks that the app boots and serves its API.
+# It builds every workspace (widget, BCF userscript, Terminal page) plus the deployable
+# static site in ./public, runs the unit tests, exercises the MCP server end to end, and
+# checks that the app boots and serves its API.
 
 name: CI
 
@@ -31,8 +32,15 @@ jobs:
       - name: Install
         run: npm install --legacy-peer-deps
 
-      - name: Build widget
+      - name: Build (widget + userscript + Terminal + static site)
         run: npm run build
+
+      - name: Deploy output exists
+        run: |
+          test -f public/index.html
+          test -f public/terminal/index.html
+          test -f public/widget/spicytools.min.js
+          test -f public/widget/spicytools.min.css
 
       - name: Widget tests
         run: npm test

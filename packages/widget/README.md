@@ -11,7 +11,7 @@ that fills the search in one tap. Drop it on any page with two files and one fun
 <script>
   SpicyTools.init({
     rootElement: document.getElementById('root'),
-    spicyURL: 'https://your-fare-api.example.com',
+    apiBase: 'https://your-fare-api.example.com',
     locale: 'en',
     hotDeals: [
       { departure: 'CAI', arrival: 'IST', price: 118, baselinePrice: 240, currency: 'USD',
@@ -64,7 +64,8 @@ claim your fare is a steal.
 | Option | Required | Type | Default | Description |
 | :- | :- | :- | :- | :- |
 | **rootElement** | **yes** | `HTMLElement` | — | Element the widget renders into. |
-| **spicyURL** | **yes** | `string` | — | Base URL of your fare API (autocomplete, availability, results). |
+| **apiBase** | **yes** | `string` | — | Base URL of your fare API (autocomplete, availability, results). |
+| spicyURL | — | `string` | — | **Deprecated** alias of `apiBase`; kept for existing embeds, `apiBase` wins when both are set. |
 | fallbackSpicyURL | — | `string` | — | Fallback fare API used when the primary request fails. |
 | webskyURL | — | `string` | — | Websky booking system URL (required in `WEBSKY` mode). |
 | mode | — | `string` | `SPICY` | `SPICY` (SpicyTools fare API) or `WEBSKY`. |
@@ -114,7 +115,7 @@ SpicyTools.enableCache();
 ```js
 SpicyTools.init({
   rootElement,
-  spicyURL,
+  apiBase,
   onSearch: (info) => {
     console.log(info.routeType, info.serviceClass, info.passengers, info.segments);
     // info.segments[0].departure.IATA, .departureDate (moment), .returnDate
@@ -166,6 +167,11 @@ npm run widget:dev   # webpack dev server on :9000, serving dist/
 npm run build        # production bundle into dist/
 npm test             # jest
 ```
+
+An embed needs **either** `apiBase` **or** the deprecated `spicyURL` — `init()` validates both, so
+the documented option works on its own. Without a reachable fare API the widget still mounts: the
+spice rack and the search deep links are built in-page, and only autocomplete, the priced calendar
+and award search come back empty.
 
 The datepicker and select are upstream React ports consumed through `@spicytools/*` specifiers,
 aliased to the published packages in `webpack.common.js` and `tsconfig.json` — swap the alias and

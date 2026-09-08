@@ -89,7 +89,8 @@ hallucinations, no re-rolling the dice.
 ## Deploy
 
 The whole app is one static file, built by `npm run build` into
-`public/index.html` (an offline copy is also written to the repo root).
+`public/index.html`, and the identical page to `index.html` in this package (the artifact the test
+suites assert against, and what Netlify Drop takes).
 
 - **Vercel**: import this repo — `vercel.json` already sets the build command
   and output directory, so every `git push` to `main` deploys automatically.
@@ -105,7 +106,7 @@ and archives are never shipped.
 | file | role |
 |---|---|
 | `index.html` | the app (everything inlined, offline build artifact) |
-| `public/` | deploy output (built, git-ignored) |
+| `public/` | deploy output (built, git-ignored) — the monorepo's root build lifts it into the deployable `public/` at the repo root |
 | `vercel.json` | Vercel build + output-directory config |
 | `netlify.toml` | Netlify build + publish config |
 | `ocrad.js` | pure offline OCR engine bundled locally |
@@ -114,7 +115,7 @@ and archives are never shipped.
 | `spicy_data.js` | airports / airlines / aircraft data |
 | `index_template.html` | page template |
 | `wordmark_alpha.png` | transparent-background wordmark (header + welcome) |
-| `build_web.py` | assembles `index.html` from the sources above — `python3 build_web.py` |
+| `build_web.py` | upstream Python builder, kept for reference: same output, but it inlines `logo.png` / `wordmark_alpha.png` as PNG data URIs (the Node build draws the wordmark as inline SVG instead, so the page needs no vendored bitmaps) |
 | `test_engine.js` + `goldens.json` | parity tests vs the reference outputs — `node test_engine.js` (distances are the WGS-84 geodesic miles described above) |
 | `test_route_direction.js` | route-direction + distance regression suite for the JFK/DUB bug report — `node test_route_direction.js` |
 | `test_accent_routes.js` | accented-city regression suite for the MIA/BOG bug report (Bogotá, Zürich, São Paulo…) — `node test_accent_routes.js` |

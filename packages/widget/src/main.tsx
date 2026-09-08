@@ -14,6 +14,7 @@ import { ApplicationState, HotDeal, Language, OnSearchFunction, SystemState } fr
 import { enableCaching } from './store/system/actions';
 import Component from './components/Component';
 import { applyDeal as applyDealAction } from './store/form/deals/actions';
+import { validateConfig } from './config';
 
 let storeGlobal: Store<ApplicationState>;
 
@@ -23,13 +24,10 @@ let storeGlobal: Store<ApplicationState>;
  * @param {SystemState} config
  */
 export const init = (config: SystemState) => {
-	if (!config.rootElement) {
-		throw Error('Please specify `rootElement` parameter in the configuration object.');
-	}
-
-	if (!config.spicyURL) {
-		throw Error('Please specify `spicyURL` parameter in the configuration object.');
-	}
+	// `apiBase` is the documented option and `spicyURL` its deprecated alias —
+	// either satisfies the widget, so both are checked here rather than the
+	// alias alone (see src/config.ts).
+	validateConfig(config);
 
 	// Fix ukrainian language code.
 	if ((config.locale as string).toLocaleLowerCase() === 'ua') {

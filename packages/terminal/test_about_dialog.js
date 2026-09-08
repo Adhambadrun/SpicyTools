@@ -26,7 +26,13 @@ const vm = require("vm");
 const REPO = __dirname;
 const APP = fs.readFileSync(path.join(REPO, "app.js"), "utf8");
 const TPL = fs.readFileSync(path.join(REPO, "index_template.html"), "utf8");
-const BUILT = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
+const BUILT_PATH = path.join(REPO, "index.html");
+const BUILT = (() => {
+  if (!fs.existsSync(BUILT_PATH)) {
+    throw new Error("packages/terminal/index.html is missing — run `npm run build --workspace @spicytools/terminal` first (the built artifact this suite asserts against).");
+  }
+  return fs.readFileSync(BUILT_PATH, "utf8");
+})();
 const EMAIL = (APP.match(/var AUTHOR_EMAIL = "([^"]+)"/) || [])[1];
 
 let PASS = 0, FAIL = 0;
@@ -142,8 +148,12 @@ assert(dupes.length === 0, "no duplicate ids in the page (found: " + [...new Set
 
 /* the wordmark must be referenced, never embedded twice */
 assert(/id="wordmarkAbout" src=""/.test(TPL), "About wordmark starts empty and is filled at runtime");
-assert((BUILT.match(/data:image\/png;base64,/g) || []).length === 2,
-       "built page still carries exactly 2 PNG data URIs (no duplicated wordmark)");
+// build.mjs inlines the wordmark as one SVG used twice (header <img> + favicon
+// tile); build_web.py inlined two PNGs. Either way the rule is the same: the
+// About dialog must share the wordmark, never embed a third copy.
+const INLINED_IMAGES = (BUILT.match(/data:image\/(?:png|svg\+xml);base64,/g) || []).length;
+assert(INLINED_IMAGES === 2,
+       `built page still carries exactly 2 inlined images (no duplicated wordmark) — found ${INLINED_IMAGES}`);
 
 /* ---------- 3. real behaviour, real app.js code ---------- */
 section("3. Dialog behaviour (real app.js in a vm sandbox)");

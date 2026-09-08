@@ -1,5 +1,8 @@
 // packages/terminal/build.mjs — assemble the single-file Terminal page.
 //
+// Emits the page twice: `index.html` (package root, the artifact tests assert
+// against) and `public/index.html` (the directory Vercel/Netlify publish).
+//
 // Upstream builds with `build_web.py` (Python + optional Pillow). This is the
 // same job in Node so the master tool has one toolchain: inline the data, the
 // engine, the app and the offline OCR engine into index_template.html, swap the
@@ -48,7 +51,14 @@ const html = template
   .replace('__SPICY_ENGINE__', () => engine)
   .replace('__APP_JS__', () => `${app}\n${bridge}`);
 
+// Two copies, exactly like the upstream build_web.py this script replaces:
+// `index.html` at the package root is the canonical artifact (the test suites
+// read it and it is what Netlify Drop takes), and `public/index.html` is the
+// deploy output — Vercel/Netlify publish `public/`, and the root build step
+// (tools/build-site.mjs) lifts it into the monorepo's own deployable `public/`.
 await mkdir(join(SRC, 'public'), { recursive: true });
+await writeFile(join(SRC, 'index.html'), html);
 await writeFile(join(SRC, 'public', 'index.html'), html);
 
-console.log(`built public/index.html (${(html.length / 1024 / 1024).toFixed(2)} MB)`);
+const size = `${(html.length / 1024 / 1024).toFixed(2)} MB`;
+console.log(`built index.html (${size}) + public/index.html`);

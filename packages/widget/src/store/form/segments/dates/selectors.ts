@@ -7,15 +7,17 @@ import { isCR, getForm, isRT } from '../../selectors';
 import { AvailableDateResponse } from '../../../../services/responses/AvailableDates';
 import { calendarHeat } from '../../../../services/spicytool';
 
-const getReturnDate = (state: ApplicationState): Moment => isRT(state) ? state.form.segments[1].departureDate.date : null;
-const getReturnAvailableDates = (state: ApplicationState): any => state.form.segments[0].returnDate ? state.form.segments[0].returnDate.availableDates : [];
+const getReturnDate = (state: ApplicationState): Moment => isRT(state) && state.form.segments[1] ? state.form.segments[1].departureDate.date : null;
+const getReturnAvailableDates = (state: ApplicationState): any => state.form.segments[0] && state.form.segments[0].returnDate ? state.form.segments[0].returnDate.availableDates : [];
 const highlightAvailableDates = (state: ApplicationState): boolean => state.system.highlightAvailableDates;
 
 const getDepartureDates = createSelector(
 	[getForm, isCR],
 	(form: FormState, isCR: boolean): Moment[] => {
 		if (!isCR) {
-			return [form.segments[0].departureDate.date];
+			// A form with no segment yet (nothing mounted, or a host page that
+			// dispatches before init) must not take the selectors down.
+			return form.segments.length ? [form.segments[0].departureDate.date] : [];
 		}
 
 		return form.segments.map(segment => {
@@ -45,7 +47,10 @@ export const getDatesBetweenDepartureAndReturn = createSelector(
 			result = getIntermediateDates(departureDates[0], lastDepartureDate);
 		}
 		else {
-			if (departureDates) {
+			// An untouched form hands this selector `departureDates = [null]`. Pushing
+			// that on makes react-datepicker highlight the epoch (1 Jan 1970) and throw
+			// "Invalid time value" while formatting it — only real moments may travel.
+			if (departureDates && departureDates[0] && departureDates[0].isValid()) {
 				if (returnDate) {
 					result = getIntermediateDates(departureDates[0], returnDate, true);
 				}
@@ -81,9 +86,17 @@ export interface HighlightedDatesGroup {
 const createHighlightedDates = (availableDates: any, intermediateDates: Moment[], highlightAvailableDates: boolean, departureDates?: Moment[], isCR?: boolean): HighlightedDatesGroup[] => {
 	const result: HighlightedDatesGroup[] = [];
 
+	// react-datepicker formats every highlight it is given; a single invalid
+	// moment in the list is enough to take the whole calendar down, so drop
+	// anything that is not a date before it gets there.
+	const usable = (dates: Moment[]): Moment[] => (dates || []).filter(date => !!date && date.isValid());
+
+	intermediateDates = usable(intermediateDates);
+	departureDates = usable(departureDates);
+
 	if (highlightAvailableDates && availableDates.length) {
 		result.push({
-			'react-datepicker__day--hasFlight': availableDates.map(({ date }: any) => moment(date))
+			'react-datepicker__day--hasFlight': usable(availableDates.map(({ date }: any) => moment(date)))
 		});
 
 		// SpicyTool prices its calendar, so the cheap days can be graded on the

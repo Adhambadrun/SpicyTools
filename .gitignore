@@ -23,4 +23,8 @@ packages/bcf-widget/dist/
 *.zip
 
 # SpicyTools Terminal build output
+packages/terminal/index.html
 packages/terminal/public/
+
+# Static deploy output (tools/build-site.mjs → vercel.json#outputDirectory)
+/public/

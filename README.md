@@ -85,10 +85,45 @@ curl localhost:3000/api/deals | jq '.deals[0]'
 | :- | :- |
 | `npm run dev` | the whole product on `:3000` |
 | `npm run build` | widget bundle, BCF userscript and the single-file Terminal page |
-| `npm test` | widget (jest, 78) + BCF link builders (node:test, 13) + Link sign-in (20) + Terminal engine (17 suites) |
+| `npm run site` | assemble the deployable static site into `public/` (already part of `npm run build`) |
+| `npm run serve` | serve `public/` on `:4173` — a preview of the static deploy, no API |
+| `npm test` | widget (jest, 88) + BCF link builders (node:test, 13) + Link sign-in (20) + Terminal engine (17 suites, all green) |
 | `npm run smoke` | end-to-end MCP test (initialize → tools/list → tools/call) |
 | `npm run mcp` | the MCP server standalone on `:3900` |
 | `npm run widget:dev` | widget dev server on `:9000` |
+
+## Deploy
+
+`npm run build` ends with `tools/build-site.mjs`, which assembles the deployable
+**static** site into `public/` — the folder the root [`vercel.json`](./vercel.json) declares as
+`outputDirectory`. That file is the whole Vercel contract (framework preset off, build command
+`npm run build`, output `public`, `npm install --legacy-peer-deps`, `cleanUrls`), so nothing in the
+dashboard has to be remembered:
+
+| Path on the deploy | What it is |
+| :- | :- |
+| `/` | the SpicyTools front door (with the widget mounted and the embed snippet) |
+| `/terminal/` | SpicyTools Terminal, the same single-file page the app serves at `/terminal` |
+| `/widget/spicytools.min.{js,css}` | the widget bundle, hot-linkable from any host |
+| `/bcf-widget.user.js` | the BCF floating userscript, installable from the deploy |
+
+The monorepo is deployed **at the repo root**, so its Root Directory must stay empty (a project
+rooted at `packages/terminal` would instead use that package's own `vercel.json`). Keep the
+dashboard in step with the file — Build Command `npm run build`, Output Directory `public` — or
+just let `vercel.json` override both.
+
+Because a static deploy has no Node process, the API-shaped routes are absent by design:
+`/api/deals`, `/api/tools`, `/api/datasets`, the SpicyTool search API and `/mcp` live in
+`apps/web/server.mjs`. Run that to serve them (Fly.io, Railway, a container…), or mount its
+handlers as Vercel Functions under a root `api/` directory — `packages/mcp/api/mcp.js` and the
+`packages/link/api/*` handlers are already written in that shape (`req`/`res.status().json()`), so
+they can be re-exported as-is.
+
+Check a static build locally before pushing:
+
+```bash
+npm run build && npm run serve   # → http://localhost:4173
+```
 
 ## Connect an agent
 
@@ -114,7 +149,7 @@ soft-capped at 30 calls/hour/IP).
 <script>
   SpicyTools.init({
     rootElement: document.getElementById('root'),
-    spicyURL: 'https://your-fare-api.example.com',
+    apiBase: 'https://your-fare-api.example.com',
     locale: 'en',
     hotDeals: [
       { departure: 'CAI', arrival: 'IST', price: 118, baselinePrice: 240, currency: 'USD',
@@ -147,7 +182,8 @@ Python backend in `packages/spicytool/` or your own implementation:
 | `GET /api/v2/search?origin&destination&date&cabin&passengers&max_stops&return_date&return_flex` | the award search the widget's "search" button runs |
 | `GET /api/v1/health`, `GET /api/v2/providers` | health and provider list |
 
-Point the widget at one with `apiBase` (`spicyURL` is the deprecated alias):
+Point the widget at one with `apiBase` (`spicyURL` is the deprecated alias; either one satisfies
+`init()`, and with no API at all the widget still mounts — only the fare lookups come back empty):
 
 ```js
 SpicyTools.init({ rootElement, apiBase: 'https://your-spicytool-host' });

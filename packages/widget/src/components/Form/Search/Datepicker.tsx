@@ -106,6 +106,14 @@ export default class Datepicker extends React.Component<Props> {
 			maxDate = moment().add(1, 'years'),
 			datesIsNotInOrderText = i18n('datesNotInOrderError');
 
+		// The datepicker converts `openToDate` with `new Date(...)`, and an empty
+		// segment hands it `null` — which is a *valid* Date (the epoch) rather
+		// than "no date", so the calendar renders a December-1969 month and
+		// throws on an invalid moment. Only a real, parseable date may be passed;
+		// anything else makes react-datepicker open on today, which is what an
+		// untouched form wants.
+		const openedDate = openToDate && moment.isMoment(openToDate) && openToDate.isValid() ? openToDate : null;
+
 		return <div className="widget-dates__col">
 			<UIDatepicker
 				isDisableable={this.isDisableable}
@@ -115,7 +123,7 @@ export default class Datepicker extends React.Component<Props> {
 				onChange={this.onChangeHandler}
 				locale={locale}
 				date={date}
-				openToDate={openToDate}
+				openToDate={openedDate}
 				minDate={minDate}
 				maxDate={maxDate}
 				getRef={getRef}
