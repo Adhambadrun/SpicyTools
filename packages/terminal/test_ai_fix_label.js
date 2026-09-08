@@ -20,7 +20,12 @@ const REPO = __dirname;
 const read = (f) => fs.readFileSync(path.join(REPO, f), "utf8");
 const APP = read("app.js");
 const TPL = read("index_template.html");
-const BUILT = read("index.html");
+const BUILT = (() => {
+  if (!fs.existsSync(path.join(__dirname, "index.html"))) {
+    throw new Error("packages/terminal/index.html is missing — run `npm run build --workspace @spicytools/terminal` first (this suite asserts against the built artifact).");
+  }
+  return read("index.html");
+})();
 const README = read("README.md");
 
 let PASS = 0, FAIL = 0;
@@ -42,7 +47,13 @@ assert(/repair/i.test(BTN) && /misses a leg|failed/i.test(BTN),
 assert(/id="btnAi"[\s\S]{0,200}>AI FIX<\/button>/.test(BUILT), "the built artifact shows AI FIX");
 
 section("2. no stale name anywhere");
-const UI = BUILT.slice(0, BUILT.indexOf("<script"));   // the markup, before the inlined scripts
+/* The region a visitor sees: <body> up to the first inlined script (the head
+   holds the favicon/wordmark data URIs and the analytics tags — no copy). Both
+   bounds are markers rather than offsets, so a <script> added to the head, or a
+   shorter/longer inlined asset, cannot silently turn this check into a
+   comparison against the analytics boilerplate (which is what it used to be). */
+const BODY_START = BUILT.indexOf("<body");
+const UI = BUILT.slice(BODY_START, BUILT.indexOf("<script", BODY_START));   // the rendered markup, before the inlined scripts
 assert(UI.length > 4000, "isolated the artifact's UI region to check");
 for (const [name, src] of [["app.js", APP], ["index_template.html", TPL], ["README.md", README], ["index.html (UI markup)", UI]]) {
   assert(!/AI AUTO|AI Auto|AI auto/.test(src), name + " never says 'AI AUTO'");
@@ -52,6 +63,7 @@ for (const [name, src] of [["app.js", APP], ["index_template.html", TPL], ["READ
    from spicy_data.js: that is an instruction to a model, not chrome for a user,
    and rewriting it would silently move the conversion goldens. */
 assert(BUILT.length > UI.length + 100000, "the inlined prompt/engine region is still present and deliberately unscanned");
+assert(BODY_START > 0 && UI.includes("<textarea"), "the scanned region is the real <body> markup, not the head");
 assert(!/AI AUTO|AI auto|✦ AI/.test(APP + TPL), "no user-facing string still points at a button that does not exist");
 
 section("2b. the app speaks auto, not offline");

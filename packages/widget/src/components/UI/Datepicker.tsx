@@ -152,6 +152,12 @@ export default class Datepicker extends React.Component<DatepickerProps, State> 
 		const NUM_OF_VISIBLE_MONTHS = 1;
 
 		const specialDayClassName = (date: Moment) => {
+			// `date` may simply be empty — and an empty moment is invalid, so
+			// `.format()` on it would throw "Invalid time value" inside the calendar.
+			if (!date || !date.isValid()) {
+				return null;
+			}
+
 			return specialDate && date.format('YYYY-MM-DD') === specialDate.format('YYYY-MM-DD') ? 'widget-ui-datepicker__specialDay' : null;
 		};
 

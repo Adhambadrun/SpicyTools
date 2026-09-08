@@ -716,7 +716,9 @@ let makeSandboxGlobal;
 
   // 7d. Built artifact carries the new welcome markup (key input + made-with-love).
   {
-    const built = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
+    const BUILT_PATH = path.join(REPO, "index.html");
+    if (!fs.existsSync(BUILT_PATH)) throw new Error("packages/terminal/index.html is missing — run `npm run build --workspace @spicytools/terminal` first.");
+    const built = fs.readFileSync(BUILT_PATH, "utf8");
     assert(built.includes("gemKeyWelcome"), "7d: built index.html has the welcome key input");
     assert(/SAVE KEY &amp; START|SAVE KEY & START/.test(built), "7d: built index.html has SAVE KEY & START");
     assert(built.includes("enterOffline"), "7d: built index.html has the keyless link");

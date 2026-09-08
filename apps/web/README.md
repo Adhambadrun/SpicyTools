@@ -57,5 +57,11 @@ returned in the response.
 - The site passes `onSearch` to the widget, so searches are rendered in-page instead of navigating
   to a results URL — good for demos, and the documented hook for building your own results page.
 - Static files are served from `public/` with path-traversal protection; `logo.png` lives there too.
+- This `public/` is the **source** of the site, not a build output. The deployable static bundle is
+  assembled into the *repo-root* `public/` by `tools/build-site.mjs` (`npm run site`) — that is the
+  folder `vercel.json#outputDirectory` points Vercel at, and it takes the Terminal page from
+  `packages/terminal/public`, the widget bundle from `packages/widget/dist` and the userscript from
+  `packages/bcf-widget/dist`. Running `npm run dev` here is unchanged: the app reads those build
+  directories directly and needs no `public/` at the repo root.
 - The widget bundle is read from `packages/widget/dist` at request time, so `npm run build` picks up
   widget changes without a copy step. Same for the BCF userscript in `packages/bcf-widget/dist`.

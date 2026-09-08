@@ -10,6 +10,7 @@ import { getSearchInfo } from '../store/form/selectors';
 import { setSearchInfoAction } from '../store/form/actions';
 import { RenderPassengerSelector } from './Form/Search/PassengersContainer';
 import { setRouteType } from '../store/form/route/actions';
+import { validateConfig } from '../config';
 
 export interface Props extends SystemState {
 	onSearch?: OnSearchFunction;
@@ -22,9 +23,9 @@ class Component extends React.Component<Props> {
 	constructor(props: Props) {
 		super(props);
 
-		if (!props.spicyURL) {
-			throw Error('Please specify `spicyURL` parameter in the configuration object.');
-		}
+		// Same gate as `init()` in main.tsx: `apiBase` (documented) or
+		// `spicyURL` (deprecated alias) — either one is enough.
+		validateConfig(props);
 
 		this.store = getStore(props);
 

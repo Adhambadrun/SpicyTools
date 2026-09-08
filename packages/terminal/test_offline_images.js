@@ -173,7 +173,11 @@ const cleanedLearned = cleanOcrText(testMistakeInput, learnedRules);
 assert(cleanedLearned.includes("XY 1337"), "Tool applied learned rule to fix flight number");
 
 console.log("\n=== 5. Weekly Report & Destination Email Verification ===");
-const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const BUILT_PATH = path.join(__dirname, "index.html");
+if (!fs.existsSync(BUILT_PATH)) {
+  throw new Error("packages/terminal/index.html is missing — run `npm run build --workspace @spicytools/terminal` first (this suite asserts against the built artifact).");
+}
+const html = fs.readFileSync(BUILT_PATH, "utf8");
 assert(html.includes("adhambadraan@gmail.com"), "index.html contains author email adhambadraan@gmail.com");
 assert(html.includes("btnWeeklyReport"), "index.html contains btnWeeklyReport button");
 assert(html.includes("reportModal"), "index.html contains reportModal dialog");
