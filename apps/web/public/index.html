@@ -20,7 +20,9 @@
 		</a>
 
 		<nav class="topbar__nav">
-			<a href="#search">Search</a>
+			<a href="/search">Search</a>
+			<a href="/terminal">Terminal</a>
+			<a href="/link">Link Generator</a>
 			<a href="#board">Spice board</a>
 			<a href="#agent">For agents</a>
 			<a class="pill" href="https://github.com/Adhambadrun/SpicyQuote" target="_blank" rel="noopener">GitHub</a>
@@ -36,6 +38,12 @@
 				search you can finish in one tap, and exposes the whole thing to AI agents over MCP.
 			</p>
 
+			<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:0 0 24px">
+				<a href="/search" class="btn" style="background:var(--brand);color:#fff;padding:12px 28px;border-radius:9999px;font-size:15px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 15px -3px rgba(225,29,46,.3)">🔍 Open Search</a>
+				<a href="/link" class="btn-ghost" style="padding:12px 28px;border-radius:9999px;font-size:15px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.85)">🔗 Link Generator</a>
+				<a href="/terminal" class="btn-ghost" style="padding:12px 28px;border-radius:9999px;font-size:15px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.85)">💻 Terminal</a>
+			</div>
+
 			<dl class="hero__stats">
 				<div><dt id="stat-deals">—</dt><dd>fares in the feed</dd></div>
 				<div><dt id="stat-tools">—</dt><dd>MCP tools</dd></div>
@@ -46,10 +54,14 @@
 		<section id="search" class="panel">
 			<div class="panel__head">
 				<h2>Search</h2>
-				<p>The SpicyTools widget. Pick a route — or tap a fare from the spice rack above the form and it fills itself in.</p>
+				<p>The SpicyTool search interface — find award flights across 10+ loyalty programs with live pricing, hidden-city detection, and flexible dates.</p>
 			</div>
 
 			<div id="search-root" class="search-root"></div>
+
+			<div style="text-align:center;margin:20px 0">
+				<a href="/search" class="btn" style="background:var(--brand);color:#fff;padding:12px 32px;border-radius:9999px;font-size:14px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 15px -3px rgba(225,29,46,.3)">Open Full Search →</a>
+			</div>
 
 			<div id="search-payload" class="payload" hidden>
 				<div class="payload__head">
@@ -141,8 +153,7 @@
 						ITA Matrix — plus the BookWithMatrix JSON and a fare estimate.
 					</p>
 					<ul class="bullets">
-						<li>Behind the real two-factor gate: an <code>@bcflights.com</code> email, a
-							6-digit code emailed to the approver, per-tab sessions that idle out in 5 minutes.</li>
+						<li>Open to all — no login required. Just paste your itinerary and go.</li>
 						<li>Arriving from the Terminal? The itinerary is already in the box.</li>
 					</ul>
 					<a class="btn" href="/link/">Open Link →</a>
