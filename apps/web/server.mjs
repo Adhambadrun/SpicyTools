@@ -456,27 +456,25 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 404, { error: 'not_found' });
     }
 
-    if (pathname === '/link' || pathname === '/link/') {
-      return sendFile(res, join(LINK_DIR, 'index.html'));
-    }
-
-    if (pathname === '/link/app.html') {
-      // Server-side half of the gate: no valid session cookie, no tool. The
-      // page itself repeats the check client-side (per tab + 5-minute idle).
-      const session = checkSession({
-        cookieHeader: req.headers.cookie,
-        secret: process.env.AUTH_SECRET || DEFAULT_AUTH_SECRET
-      });
-
-      if (session.status !== 200) {
-        return res.writeHead(302, { location: '/link/' }).end();
-      }
-
+    if (pathname === '/link' || pathname === '/link/' || pathname === '/link/app.html') {
+      // Link generator is open to all — no login gate.
       return sendFile(res, join(LINK_DIR, 'app.html'));
     }
 
     if (pathname === '/link/dead-end.jpg') {
       return sendFile(res, join(LINK_DIR, 'Dead end.jpg'));
+    }
+
+    // --- SpicyTool Frontend (packages/spicytool): the main search interface ---
+    if (pathname === '/search' || pathname === '/search/') {
+      const spicyFrontend = resolve(HERE, '../../packages/spicytool/frontend/index.html');
+      if (!existsSync(spicyFrontend)) {
+        return sendJson(res, 404, {
+          error: 'not_found',
+          message: 'SpicyTool frontend not found.'
+        });
+      }
+      return sendFile(res, spicyFrontend);
     }
 
     // --- SpicyTools Terminal (packages/terminal): flights → GDS black window ---
